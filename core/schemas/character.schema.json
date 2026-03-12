@@ -1,0 +1,88 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AutoDM Character Schema",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "race",
+    "class",
+    "level",
+    "abilities",
+    "hp",
+    "ac",
+    "inventory",
+    "currency"
+  ],
+  "properties": {
+    "id": { "type": "string" },
+    "name": { "type": "string" },
+    "race": { "type": "string" },
+    "class": { "type": "string" },
+    "level": { "type": "integer", "minimum": 1 },
+    "alignment": { "type": "string" },
+    "background": { "type": "string" },
+    "abilities": {
+      "type": "object",
+      "required": ["str", "dex", "con", "int", "wis", "cha"],
+      "properties": {
+        "str": { "type": "integer", "minimum": 1, "maximum": 30 },
+        "dex": { "type": "integer", "minimum": 1, "maximum": 30 },
+        "con": { "type": "integer", "minimum": 1, "maximum": 30 },
+        "int": { "type": "integer", "minimum": 1, "maximum": 30 },
+        "wis": { "type": "integer", "minimum": 1, "maximum": 30 },
+        "cha": { "type": "integer", "minimum": 1, "maximum": 30 }
+      }
+    },
+    "hp": {
+      "type": "object",
+      "required": ["current", "max"],
+      "properties": {
+        "current": { "type": "integer" },
+        "max": { "type": "integer" },
+        "temp": { "type": "integer", "default": 0 }
+      }
+    },
+    "ac": { "type": "integer", "minimum": 0 },
+    "proficiencyBonus": { "type": "integer", "default": 2 },
+    "proficiencies": {
+      "type": "object",
+      "properties": {
+        "skills": { "type": "array", "items": { "type": "string" } },
+        "savingThrows": { "type": "array", "items": { "type": "string" } },
+        "weapons": { "type": "array", "items": { "type": "string" } },
+        "armor": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "inventory": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "type", "quantity"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "type": { "enum": ["weapon", "armor", "item", "consumable"] },
+          "quantity": { "type": "integer", "minimum": 1 },
+          "equipped": { "type": "boolean" },
+          "properties": { "type": "object" }
+        }
+      }
+    },
+    "currency": {
+      "type": "object",
+      "properties": {
+        "gp": { "type": "integer", "default": 0 },
+        "sp": { "type": "integer", "default": 0 },
+        "cp": { "type": "integer", "default": 0 }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "createdAt": { "type": "string", "format": "date-time" },
+        "lastUpdated": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

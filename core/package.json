@@ -1,0 +1,23 @@
+{
+  "name": "core",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:campaign": "node --no-warnings=ExperimentalWarning --loader ts-node/esm engine/test_campaign.ts",
+    "test:ai-loop": "node --no-warnings=ExperimentalWarning --loader ts-node/esm ai/test_ai_loop.ts",
+    "test": "npm run typecheck && npm run test:campaign && npm run test:ai-loop"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@types/node": "^25.4.0",
+    "dotenv": "^17.3.1",
+    "openai": "^6.27.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}

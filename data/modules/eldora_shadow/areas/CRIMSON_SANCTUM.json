@@ -1,0 +1,16 @@
+{
+  "areaId": "CRIMSON_SANCTUM",
+  "name": "绯红圣所",
+  "areaType": "dungeon",
+  "locations": [
+    {
+      "id": "S01",
+      "name": "静滞大厅",
+      "description": "圣所的核心区域。墙壁呈现出一种诡异的绯红色，仿佛石头本身在渗透血液。大厅尽头是一座悬浮在半空中的心脏状晶体。",
+      "connections": ["WHISPERING_CATACOMBS:C02"],
+      "encounters": ["ENC_BOSS"],
+      "dmNotes": "最终决战地点。晶体中心跳动着‘艾尔多拉之影’的核心，它会召唤暗影仆从进行防御。"
+    }
+  ],
+  "dmInstructions": "这是冒险的顶点。环境描述应更加疯狂和非理性，强调心跳声和血液的腥甜气息。当玩家触碰晶体时触发战斗。"
+}

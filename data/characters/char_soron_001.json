@@ -1,0 +1,58 @@
+{
+  "id": "char_soron_001",
+  "name": "索隆·星影",
+  "race": "Half-Elf",
+  "class": "Ranger",
+  "level": 1,
+  "alignment": "Neutral Good",
+  "background": "Outlander",
+  "abilities": {
+    "str": 10,
+    "dex": 16,
+    "con": 14,
+    "int": 12,
+    "wis": 14,
+    "cha": 10
+  },
+  "hp": {
+    "current": 12,
+    "max": 12,
+    "temp": 0
+  },
+  "ac": 14,
+  "proficiencyBonus": 2,
+  "proficiencies": {
+    "skills": ["Perception", "Stealth", "Survival", "Athletics"],
+    "savingThrows": ["strength", "dexterity"],
+    "weapons": ["Shortsword", "Longbow"],
+    "armor": ["Light Armor", "Medium Armor", "Shields"]
+  },
+  "inventory": [
+    {
+      "id": "item_001",
+      "name": "Leather Armor",
+      "type": "armor",
+      "quantity": 1,
+      "equipped": true,
+      "properties": { "ac_base": 11 }
+    },
+    {
+      "id": "item_002",
+      "name": "Shortsword",
+      "type": "weapon",
+      "quantity": 1,
+      "equipped": true,
+      "properties": { "damage": "1d6" }
+    }
+  ],
+  "currency": {
+    "gp": 10,
+    "sp": 5,
+    "cp": 0
+  },
+  "metadata": {
+    "createdAt": "2026-03-10T14:00:00Z",
+    "lastUpdated": "2026-03-10T14:00:00Z",
+    "status": "alive"
+  }
+}

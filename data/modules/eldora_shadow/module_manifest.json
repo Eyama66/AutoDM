@@ -1,0 +1,19 @@
+{
+  "moduleId": "ELDORA_001",
+  "name": "艾尔多拉之影",
+  "version": "1.1.0",
+  "description": "古老的艾尔多拉文明已经沦为尘土，但在黑荆棘岗哨的地下，某种不详的力量正在苏醒。你将穿越荒废的村落，深入低语地窟，最终在绯红圣所直面阴影。",
+  "startingLocation": "THORN_VILLAGE:E01",
+  "worldTone": "Dark Fantasy, Mystery, Decay",
+  "areas": [
+    "THORN_VILLAGE",
+    "WHISPERING_CATACOMBS",
+    "CRIMSON_SANCTUM"
+  ],
+  "ruleset": "dnd5e",
+  "dmNotes": "AI DM 应该保持一种神秘且略带压抑的语气。重点描述寒冷的北风和铁锈的味道。在玩家未进行动作前，不要主动推进剧情。",
+  "globalVariables": {
+    "gate_unlocked": false,
+    "mirna_attitude": "neutral"
+  }
+}

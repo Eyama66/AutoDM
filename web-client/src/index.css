@@ -1,0 +1,145 @@
+@import url("https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,200..900;1,200..900&family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;700&family=Noto+Sans+SC:wght@400;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-background text-parchment-200 font-sans selection:bg-parchment-500/30 selection:text-white;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-serif text-parchment-100 uppercase tracking-widest;
+  }
+}
+
+@layer components {
+  .game-shell {
+    @apply relative;
+  }
+
+  .message-thread__inner {
+    @apply space-y-12;
+  }
+
+  .message-row {
+    @apply flex flex-col;
+  }
+
+  .message-bubble {
+    @apply ml-auto w-fit max-w-[42rem] rounded border p-5 shadow-inner;
+  }
+
+  .message-bubble--user {
+    @apply border-parchment-800/30 bg-surface/40;
+  }
+
+  .message-bubble--system {
+    @apply border-primary/30 bg-primary/10;
+  }
+
+  .message-bubble__content {
+    @apply whitespace-pre-wrap leading-relaxed text-right;
+  }
+
+  .message-bubble__content--user {
+    @apply italic text-parchment-300;
+  }
+
+  .message-bubble__content--system {
+    @apply font-mono text-sm text-parchment-200;
+  }
+
+  /* 沉浸式对话框 */
+  .chat-bubble-dm {
+    @apply relative border-l-2 border-primary pl-6 py-4 my-6 italic text-lg leading-relaxed text-parchment-100;
+    background: linear-gradient(
+      90deg,
+      rgba(163, 132, 91, 0.05) 0%,
+      transparent 100%
+    );
+  }
+
+  /* 首字母下沉 (Drop Cap) */
+  .drop-cap::first-letter {
+    @apply float-left text-5xl font-serif font-black mr-2 mt-1 text-primary leading-none;
+    text-shadow: 2px 2px 0px rgba(0, 0, 0, 0.5);
+  }
+
+  .dm-message-stack {
+    @apply w-full;
+  }
+
+  .dm-dialogue {
+    @apply my-4 ml-2 grid grid-cols-[2.25rem,minmax(0,42rem)] items-start gap-x-3;
+  }
+
+  .dm-dialogue__avatar {
+    @apply flex h-9 w-9 items-center justify-center rounded-full border border-primary/40 bg-gradient-to-br from-primary/30 to-primary/10 shadow-[0_0_12px_rgba(163,132,91,0.15)];
+  }
+
+  .dm-dialogue__body {
+    @apply flex min-w-0 flex-col items-start;
+  }
+
+  .dm-dialogue__speaker {
+    @apply mb-1.5 block text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-primary;
+  }
+
+  .dm-dialogue__bubble {
+    @apply relative w-fit max-w-full rounded-lg rounded-tl-none border border-parchment-800/40 bg-surface/70 p-4 shadow-lg backdrop-blur-sm;
+  }
+
+  .dm-dialogue__content {
+    @apply whitespace-pre-wrap text-[15px] leading-relaxed text-parchment-100;
+  }
+
+  .dm-dialogue__pointer {
+    @apply absolute top-0 -left-[6px] h-0 w-0 border-b-[6px] border-b-transparent border-r-[6px] border-r-surface/70 border-t-[6px] border-t-parchment-800/40 border-l-0;
+  }
+
+  /* 动作标签 (Action Tags) */
+  .action-chip {
+    @apply inline-flex items-center px-2 py-0.5 rounded-sm text-[10px] font-mono uppercase bg-surface border border-primary/30 text-primary mr-2 mb-2;
+    box-shadow: 0 0 10px rgba(163, 132, 91, 0.1);
+  }
+
+  /* 交互式输入框 */
+  .fantasy-input-container {
+    @apply relative flex items-center bg-surface border border-parchment-800 focus-within:border-primary rounded-sm transition-all shadow-inner;
+  }
+
+  .fantasy-input {
+    @apply flex-1 bg-transparent border-none focus:ring-0 text-parchment-100 placeholder:text-parchment-800 px-4 py-3 text-lg;
+  }
+
+  /* 通用魔法边框 */
+  .magic-border {
+    position: relative;
+    @apply bg-surface/80 backdrop-blur-md;
+  }
+
+  .magic-border::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    @apply border border-primary/20 pointer-events-none;
+  }
+}
+
+/* 掩盖默认滚动条 */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

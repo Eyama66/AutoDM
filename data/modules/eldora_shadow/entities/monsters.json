@@ -1,0 +1,39 @@
+[
+  {
+    "id": "fallen_guard",
+    "name": "堕落卫兵",
+    "monsterType": "Undead",
+    "level": 2,
+    "hp": { "current": 18, "max": 18 },
+    "ac": 13,
+    "abilities": { "str": 14, "dex": 10, "con": 14, "int": 5, "wis": 8, "cha": 5 },
+    "attacks": [
+      { "name": "生锈的长剑", "attackBonus": 4, "damageDice": "1d8+2" }
+    ]
+  },
+  {
+    "id": "shadow_spirit",
+    "name": "阴影幽灵",
+    "monsterType": "Undead",
+    "level": 3,
+    "hp": { "current": 22, "max": 22 },
+    "ac": 11,
+    "abilities": { "str": 6, "dex": 14, "con": 12, "int": 10, "wis": 12, "cha": 12 },
+    "attacks": [
+      { "name": "吸能触碰", "attackBonus": 4, "damageDice": "1d6+2" }
+    ]
+  },
+  {
+    "id": "eldora_shadow_aspect",
+    "name": "艾尔多拉之影 - 拟态",
+    "monsterType": "Fiend",
+    "level": 5,
+    "hp": { "current": 55, "max": 55 },
+    "ac": 15,
+    "abilities": { "str": 16, "dex": 16, "con": 16, "int": 14, "wis": 14, "cha": 16 },
+    "attacks": [
+      { "name": "暗影裂隙", "attackBonus": 6, "damageDice": "2d6+3" },
+      { "name": "灵魂鞭笞", "attackBonus": 6, "damageDice": "1d10+3" }
+    ]
+  }
+]
