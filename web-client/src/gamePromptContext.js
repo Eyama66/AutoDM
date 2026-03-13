@@ -26,6 +26,8 @@ export function buildPromptContext(state, currentArea, currentLocation) {
     availableConnections: currentLocation?.connections || [],
     availableExitOptions,
     currentLocationActions: currentLocation?.actions || [],
+    currentLocationEncounters: currentLocation?.encounters || [],
+    currentLocationItems: currentLocation?.items || [],
     currentLocationDmNotes: currentLocation?.dmNotes || '',
     npcs: currentLocation?.npcs || [],
     npcDmNotes: summarizeNpcDmNotes(currentLocation?.npcs),

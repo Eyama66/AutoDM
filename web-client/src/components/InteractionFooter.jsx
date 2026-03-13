@@ -1,10 +1,7 @@
 import { Send } from 'lucide-react'
 import clsx from 'clsx'
 
-import { CheckSetPanel } from './interaction/CheckSetPanel'
-import { FormulaRollPanel } from './interaction/FormulaRollPanel'
 import { SessionStatePanel } from './interaction/SessionStatePanel'
-import { SingleCheckPanel } from './interaction/SingleCheckPanel'
 
 function renderCombatTracker(initiativeOrder, characterId) {
   return (
@@ -43,12 +40,17 @@ function renderDefaultInput({
   setInputValue,
   isThinking,
   isCharacterDowned,
+  hasPendingDiceAction,
   handleInputKeyDown,
   setIsInputComposing,
   handleSubmitInput,
 }) {
+  const isBlocked = isThinking || hasPendingDiceAction
   return (
-    <div className="flex items-center gap-4 bg-surface border border-parchment-800 rounded shadow-[0_15px_30px_rgba(0,0,0,0.5)] transition-all focus-within:ring-1 focus-within:ring-primary-600/50">
+    <div className={clsx(
+      'flex items-center gap-4 bg-surface border rounded shadow-[0_15px_30px_rgba(0,0,0,0.5)] transition-all',
+      isBlocked ? 'border-parchment-800/40 opacity-60' : 'border-parchment-800 focus-within:ring-1 focus-within:ring-primary-600/50',
+    )}>
       <input
         value={inputValue}
         onChange={(event) => setInputValue(event.target.value)}
@@ -56,13 +58,15 @@ function renderDefaultInput({
         onCompositionEnd={() => setIsInputComposing(false)}
         onKeyDown={handleInputKeyDown}
         placeholder={
-          isThinking
-            ? '深渊正在低语...'
-            : isCharacterDowned
-              ? '你已倒地，可描述求援、意识中的最后判断，或等待 DM 继续裁定...'
-              : '通过言语或动作来改写命运...'
+          hasPendingDiceAction
+            ? '请先在左侧面板完成检定...'
+            : isThinking
+              ? '深渊正在低语...'
+              : isCharacterDowned
+                ? '你已倒地，可描述求援、意识中的最后判断，或等待 DM 继续裁定...'
+                : '通过言语或动作来改写命运...'
         }
-        disabled={isThinking}
+        disabled={isBlocked}
         className={clsx(
           'flex-1 bg-transparent border-none focus:ring-0 text-parchment-100 placeholder:text-parchment-900 text-lg px-6 py-4',
           isThinking && 'animate-pulse',
@@ -70,10 +74,10 @@ function renderDefaultInput({
       />
       <button
         onClick={handleSubmitInput}
-        disabled={isThinking}
+        disabled={isBlocked}
         className={clsx(
           'p-4 transition-all transform active:scale-95',
-          isThinking
+          isBlocked
             ? 'bg-parchment-800 text-parchment-900'
             : 'bg-primary-600 hover:bg-primary-500 text-background rounded-r',
         )}
@@ -90,7 +94,6 @@ function renderDefaultInput({
 
 export function InteractionFooter(props) {
   const {
-    character,
     isCombatActive,
     initiativeOrder,
     characterId,
@@ -100,17 +103,10 @@ export function InteractionFooter(props) {
     isSessionCompleted,
     sessionEndReason,
     rescueWindowOpen,
-    pendingCheck,
-    pendingCheckSet,
-    pendingFormulaRoll,
-    pendingRollAction,
+    hasPendingDiceAction,
     inputValue,
     setInputValue,
-    isInputComposing,
     setIsInputComposing,
-    handleRollCheck,
-    handleRollCheckSet,
-    handleFormulaRoll,
     handleInputKeyDown,
     handleSubmitInput,
     handleResolveEndgame,
@@ -118,8 +114,8 @@ export function InteractionFooter(props) {
   } = props
 
   return (
-    <footer className="p-8 pb-10">
-      <div className="max-w-4xl mx-auto space-y-4">
+    <footer className="px-6 py-4">
+      <div className="max-w-4xl mx-auto space-y-3">
         {isCharacterDowned && (
           <div className="rounded border border-red-900/40 bg-red-950/20 px-4 py-3 text-sm text-parchment-200">
             {rescueWindowOpen
@@ -130,36 +126,7 @@ export function InteractionFooter(props) {
 
         {isCombatActive && renderCombatTracker(initiativeOrder, characterId)}
 
-        {pendingCheckSet ? (
-          <CheckSetPanel
-            character={character}
-            pendingCheckSet={pendingCheckSet}
-            inputValue={inputValue}
-            setInputValue={setInputValue}
-            isThinking={isThinking}
-            isInputComposing={isInputComposing}
-            setIsInputComposing={setIsInputComposing}
-            handleRollCheckSet={handleRollCheckSet}
-          />
-        ) : pendingCheck ? (
-          <SingleCheckPanel
-            character={character}
-            pendingCheck={pendingCheck}
-            inputValue={inputValue}
-            setInputValue={setInputValue}
-            isThinking={isThinking}
-            isInputComposing={isInputComposing}
-            setIsInputComposing={setIsInputComposing}
-            handleRollCheck={handleRollCheck}
-          />
-        ) : pendingFormulaRoll ? (
-          <FormulaRollPanel
-            pendingFormulaRoll={pendingFormulaRoll}
-            pendingRollAction={pendingRollAction}
-            isThinking={isThinking}
-            handleFormulaRoll={handleFormulaRoll}
-          />
-        ) : isSessionCompleted || isTerminalLocked ? (
+        {isSessionCompleted || isTerminalLocked ? (
           <SessionStatePanel
             isSessionCompleted={isSessionCompleted}
             sessionEndReason={sessionEndReason}
@@ -174,6 +141,7 @@ export function InteractionFooter(props) {
             setInputValue,
             isThinking,
             isCharacterDowned,
+            hasPendingDiceAction,
             handleInputKeyDown,
             setIsInputComposing,
             handleSubmitInput,

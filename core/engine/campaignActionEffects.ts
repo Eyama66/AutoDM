@@ -197,6 +197,43 @@ export function applyCampaignAction({
       return emittedEvents;
     }
 
+    case "@STATUS_ADD": {
+      const condition = action.payload.trim();
+      if (!condition) return emittedEvents;
+      if (!state.characterSheet.conditions) {
+        state.characterSheet.conditions = [];
+      }
+      if (!state.characterSheet.conditions.includes(condition)) {
+        state.characterSheet.conditions.push(condition);
+      }
+      emittedEvents.push(
+        createEvent("CONDITION_UPDATED", {
+          op: "add",
+          condition,
+          conditions: [...state.characterSheet.conditions],
+        }),
+      );
+      return emittedEvents;
+    }
+
+    case "@STATUS_REMOVE": {
+      const condition = action.payload.trim();
+      if (!condition) return emittedEvents;
+      if (state.characterSheet.conditions) {
+        state.characterSheet.conditions = state.characterSheet.conditions.filter(
+          (c) => c !== condition,
+        );
+      }
+      emittedEvents.push(
+        createEvent("CONDITION_UPDATED", {
+          op: "remove",
+          condition,
+          conditions: [...(state.characterSheet.conditions ?? [])],
+        }),
+      );
+      return emittedEvents;
+    }
+
     case "@VAR_UPDATE": {
       const parsedVariableUpdate = parseKeyValuePayload(action.payload);
       if (!parsedVariableUpdate) {
@@ -286,6 +323,32 @@ export function applyCampaignAction({
         createEvent("ROLL_REQUESTED", {
           label: parsedRoll.key,
           formula: parsedRoll.value,
+        }),
+      );
+      return emittedEvents;
+    }
+
+    case "@ITEM_ADD": {
+      const itemName = action.payload.trim();
+      if (!itemName) return emittedEvents;
+
+      if (!state.characterSheet.inventory) {
+        state.characterSheet.inventory = [];
+      }
+
+      const newItem = {
+        id: `item_found_${Date.now()}`,
+        name: itemName,
+        type: "item",
+        quantity: 1,
+        equipped: false,
+      };
+      state.characterSheet.inventory.push(newItem);
+
+      emittedEvents.push(
+        createEvent("ITEM_ACQUIRED", {
+          itemId: newItem.id,
+          itemName,
         }),
       );
       return emittedEvents;

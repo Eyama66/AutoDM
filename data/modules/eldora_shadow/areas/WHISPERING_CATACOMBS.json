@@ -8,14 +8,15 @@
       "name": "殉难者长廊",
       "description": "长廊两侧整齐地排列着石龛，里面盛放着枯萎的遗骸。空气中回荡着细碎的私语声，仿佛墙壁本身正在诉说着古老的诅咒。",
       "connections": ["THORN_VILLAGE:E03", "C02"],
-      "encounters": ["ENC_001"],
-      "dmNotes": "这里是战斗的第一个爆发点。阴影中会潜伏着两名堕落卫兵。"
+      "encounters": ["fallen_guard", "fallen_guard"],
+      "dmNotes": "这里是战斗的第一个爆发点。阴影中潜伏着两名堕落卫兵。触发 [@COMBAT_START(fallen_guard,fallen_guard)]。"
     },
     {
       "id": "C02",
       "name": "断裂的祭坛",
       "description": "一个巨大的地下拱顶，中心是一座已经断成两截的黑色大理石祭坛。紫色的烟氲从裂缝中缓缓升起，在空中变幻出扭曲的面孔。",
       "connections": ["C01", "CRIMSON_SANCTUM:S01"],
+      "encounters": ["shadow_spirit"],
       "actions": ["@CHECK(宗教:12)", "@CHECK(奥法:14)"],
       "npcs": [
         {

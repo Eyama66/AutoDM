@@ -147,11 +147,17 @@ function parseLooseNarrativeContent(rawContent) {
  * @param {string} rawContent - DM 返回的原始文本 (已由 CampaignManager 清理过动作标签)
  * @returns {NarrativeSegment[]}
  */
+// AI 有时用 <<HINT>>...<<HINT>> 代替 <<HINT>>...<</HINT>>，在此修正
+function normalizeHintTags(text) {
+  return text.replace(/<<HINT>>([\s\S]*?)<<HINT>>/g, "<<HINT>>$1<</HINT>>");
+}
+
 export function parseNarrativeContent(rawContent) {
   if (!rawContent || typeof rawContent !== "string") {
     return [{ type: "narration", content: "" }];
   }
 
+  const normalized = normalizeHintTags(rawContent);
   const segments = [];
   let lastIndex = 0;
 
@@ -159,10 +165,10 @@ export function parseNarrativeContent(rawContent) {
   SEGMENT_REGEX.lastIndex = 0;
 
   let match;
-  while ((match = SEGMENT_REGEX.exec(rawContent)) !== null) {
+  while ((match = SEGMENT_REGEX.exec(normalized)) !== null) {
     // 标签前的文本 → narration
     if (match.index > lastIndex) {
-      const before = rawContent.slice(lastIndex, match.index).trim();
+      const before = normalized.slice(lastIndex, match.index).trim();
       if (before) {
         segments.push({ type: "narration", content: before });
       }
@@ -187,16 +193,16 @@ export function parseNarrativeContent(rawContent) {
   }
 
   // 标签后的剩余文本 → narration
-  if (lastIndex < rawContent.length) {
-    const tail = rawContent.slice(lastIndex).trim();
+  if (lastIndex < normalized.length) {
+    const tail = normalized.slice(lastIndex).trim();
     if (tail) {
       segments.push(...parseLooseNarrativeContent(tail));
     }
   }
 
-  // 旧消息 fallback: 没有标签时，尝试从“看守员 + 引号台词”这种格式中恢复对话块
+  // 旧消息 fallback: 没有标签时，尝试从”看守员 + 引号台词”这种格式中恢复对话块
   if (segments.length === 0) {
-    return parseLooseNarrativeContent(rawContent.trim());
+    return parseLooseNarrativeContent(normalized.trim());
   }
 
   return segments;

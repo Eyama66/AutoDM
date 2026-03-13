@@ -22,18 +22,6 @@
 }
 
 @layer components {
-  .game-shell {
-    @apply relative;
-  }
-
-  .message-thread__inner {
-    @apply space-y-12;
-  }
-
-  .message-row {
-    @apply flex flex-col;
-  }
-
   .message-bubble {
     @apply ml-auto w-fit max-w-[42rem] rounded border p-5 shadow-inner;
   }

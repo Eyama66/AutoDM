@@ -36,6 +36,7 @@ export interface CharacterSheet {
   };
   inventory: Item[];
   checkModifiers?: CheckModifier[];
+  conditions?: string[];
   currency: {
     gp: number;
     sp: number;

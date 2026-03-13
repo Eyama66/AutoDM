@@ -196,6 +196,18 @@ export class CampaignManager {
           hasMonsterDefinition(this.monsterLibrary, id),
         );
 
+      case "@ITEM_ADD": {
+        const itemName = action.payload.trim();
+        if (!itemName) return false;
+        const location = this.currentAreaData?.locations?.find(
+          (l: any) => l.id === this.state.currentLocationId,
+        );
+        const allowedItems: string[] = location?.items || [];
+        return allowedItems.some(
+          (allowed: string) => allowed.toLowerCase() === itemName.toLowerCase(),
+        );
+      }
+
       case "@COMBAT_END":
         return this.state.isCombatActive;
 

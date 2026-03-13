@@ -157,6 +157,23 @@ export type SessionEndedEvent = EngineEvent<
   }
 >;
 
+export type ConditionUpdatedEvent = EngineEvent<
+  "CONDITION_UPDATED",
+  {
+    op: "add" | "remove";
+    condition: string;
+    conditions: string[];
+  }
+>;
+
+export type ItemAcquiredEvent = EngineEvent<
+  "ITEM_ACQUIRED",
+  {
+    itemId: string;
+    itemName: string;
+  }
+>;
+
 export type KnownEngineEvent =
   | PlayerIntentSubmittedEvent
   | AIProposalReceivedEvent
@@ -172,4 +189,6 @@ export type KnownEngineEvent =
   | CombatEndedEvent
   | QuestUpdatedEvent
   | SummaryGeneratedEvent
-  | SessionEndedEvent;
+  | SessionEndedEvent
+  | ConditionUpdatedEvent
+  | ItemAcquiredEvent;

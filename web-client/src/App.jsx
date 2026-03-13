@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import clsx from 'clsx'
-import { CharacterSidebar } from './components/CharacterSidebar'
 import { DmMessageRenderer } from './components/DmMessageRenderer'
 import { InteractionFooter } from './components/InteractionFooter'
+import { LeftPanel } from './components/LeftPanel'
 import { NavSidebar } from './components/NavSidebar'
 import { UserMessageBubble } from './components/UserMessageBubble'
 import {
@@ -374,6 +374,22 @@ const App = () => {
 
       <NavSidebar isSidebarOpen={isSidebarOpen} setIsSidebarOpen={setIsSidebarOpen} />
 
+      <LeftPanel
+        character={character}
+        isThinking={isThinking}
+        pendingCheck={pendingCheck}
+        pendingCheckSet={pendingCheckSet}
+        pendingFormulaRoll={pendingFormulaRoll}
+        pendingRollAction={pendingRollAction}
+        inputValue={inputValue}
+        setInputValue={setInputValue}
+        isInputComposing={isInputComposing}
+        setIsInputComposing={setIsInputComposing}
+        handleRollCheck={handleRollCheck}
+        handleRollCheckSet={handleRollCheckSet}
+        handleFormulaRoll={handleFormulaRoll}
+      />
+
       <main
         className="game-main relative z-10 flex h-full flex-1 flex-col bg-gradient-to-b from-background to-background/95"
         data-testid="game-main"
@@ -403,10 +419,10 @@ const App = () => {
         </header>
 
         <div
-          className="message-thread scrollbar-hide flex flex-1 flex-col items-center overflow-y-auto px-6 py-10 sm:px-12"
+          className="scrollbar-hide flex-1 overflow-y-auto"
           data-testid="message-thread"
         >
-          <div className="message-thread__inner w-full max-w-4xl space-y-12" data-testid="message-thread-inner">
+          <div className="w-full max-w-4xl space-y-12 px-6 py-10 sm:px-12" data-testid="message-thread-inner">
             <AnimatePresence mode="popLayout">
               {messages.map((msg) => (
                 <MotionDiv
@@ -415,8 +431,8 @@ const App = () => {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.6, ease: 'easeOut' }}
                   className={clsx(
-                    'message-row flex flex-col',
-                    msg.role === 'dm' ? 'message-row--dm w-full' : 'message-row--user items-end opacity-80',
+                    'flex flex-col',
+                    msg.role === 'dm' ? 'w-full' : 'items-end opacity-80',
                   )}
                   data-testid={msg.role === 'dm' ? 'message-row-dm' : 'message-row-user'}
                 >
@@ -433,7 +449,6 @@ const App = () => {
         </div>
 
         <InteractionFooter
-          character={character}
           isCombatActive={isCombatActive}
           initiativeOrder={campaign.getCombatEngine().getInitiativeOrder()}
           characterId={character.id}
@@ -443,17 +458,11 @@ const App = () => {
           isSessionCompleted={isSessionCompleted}
           sessionEndReason={sessionEndReason}
           rescueWindowOpen={rescueWindowOpen}
-          pendingCheck={pendingCheck}
-          pendingCheckSet={pendingCheckSet}
-          pendingFormulaRoll={pendingFormulaRoll}
-          pendingRollAction={pendingRollAction}
+          hasPendingDiceAction={!!(pendingCheck || pendingCheckSet || pendingFormulaRoll)}
           inputValue={inputValue}
           setInputValue={setInputValue}
           isInputComposing={isInputComposing}
           setIsInputComposing={setIsInputComposing}
-          handleRollCheck={handleRollCheck}
-          handleRollCheckSet={handleRollCheckSet}
-          handleFormulaRoll={handleFormulaRoll}
           handleInputKeyDown={handleInputKeyDown}
           handleSubmitInput={handleSubmitInput}
           handleResolveEndgame={handleResolveEndgame}
@@ -461,7 +470,6 @@ const App = () => {
         />
       </main>
 
-      <CharacterSidebar character={character} />
     </div>
   )
 }

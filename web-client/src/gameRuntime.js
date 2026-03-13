@@ -14,7 +14,7 @@ import { buildInitialSession, clearPersistedSession, persistSession } from './ga
 export const aiEngine = new AIEngine({
   apiKey: import.meta.env.VITE_AI_API_KEY || import.meta.env.VITE_DEEPSEEK_API_KEY,
   baseURL: import.meta.env.VITE_AI_BASE_URL || import.meta.env.VITE_DEEPSEEK_BASE_URL,
-  model: 'gpt-5.2',
+  model: import.meta.env.VITE_AI_MODEL,
 })
 
 export const initialSession = buildInitialSession()

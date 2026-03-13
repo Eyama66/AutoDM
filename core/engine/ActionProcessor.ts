@@ -12,6 +12,8 @@ export type ActionType =
   | "@ATTACK" // 攻击：[@ATTACK(TargetID:Damage)]
   | "@COMBAT_END" // 战斗结束：[@COMBAT_END]
   | "@VAR_UPDATE" // 变量更新：[@VAR_UPDATE(VarName:Value)]
+  | "@STATUS_ADD" // 附加角色状态：[@STATUS_ADD(流血)]
+  | "@STATUS_REMOVE" // 解除角色状态：[@STATUS_REMOVE(流血)]
   | "@CHECK" // 发起检定：[@CHECK(SkillName:DC)]
   | "@CHECK_SET" // 多检定：[@CHECK_SET({...})]
   | "@ROLL" // 发起数值掷骰：[@ROLL(Label:Formula)]
@@ -30,7 +32,7 @@ export interface ParsedAction {
  */
 export class ActionProcessor {
   private static readonly parsedTagRegex = /\[(@[A-Z_]+)(?:\(([\s\S]*?)\))?\]/g;
-  private static readonly looseProtocolTagRegex = /\[@[A-Z_]+[^\]]*\]/g;
+  private static readonly looseProtocolTagRegex = /\[@[A-Z_]+(?:\([\s\S]*?\))?\]/g;
 
   /**
    * 解析文本中的所有指令标签
