@@ -8,8 +8,30 @@
       "name": "殉难者长廊",
       "description": "长廊两侧整齐地排列着石龛，里面盛放着枯萎的遗骸。空气中回荡着细碎的私语声，仿佛墙壁本身正在诉说着古老的诅咒。",
       "connections": ["THORN_VILLAGE:E03", "C02"],
-      "encounters": ["fallen_guard", "fallen_guard"],
-      "dmNotes": "这里是战斗的第一个爆发点。阴影中潜伏着两名堕落卫兵。触发 [@COMBAT_START(fallen_guard,fallen_guard)]。"
+      "encounters": ["fallen_guard_alert", "fallen_guard_ambush"],
+      "dmNotes": "这里是战斗的第一个爆发点。阴影中潜伏着两名堕落卫兵。感知检定（DC 12）决定分支：成功则玩家先手，失败则被偷袭。触发器见 triggers 字段。",
+      "triggers": [
+        {
+          "id": "TRIG_C01_PATROL_AWARENESS",
+          "when": "check_resolved",
+          "skill": "感知",
+          "dc": 12,
+          "branches": {
+            "success": {
+              "narrativeHint": "你眼角捕捉到石龛阴影中的异动——两名堕落卫兵尚未察觉你的存在，你握紧武器，先手已握在掌中。",
+              "deployable": {
+                "encounterIds": ["fallen_guard_alert"]
+              }
+            },
+            "failure": {
+              "narrativeHint": "私语声掩盖了一切。铁甲碰撞声从你背后骤然响起——两名堕落卫兵从暗处扑来，你还没来得及转身。",
+              "deployable": {
+                "encounterIds": ["fallen_guard_ambush"]
+              }
+            }
+          }
+        }
+      ]
     },
     {
       "id": "C02",

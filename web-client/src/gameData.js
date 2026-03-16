@@ -1,6 +1,8 @@
 import { DEFAULT_CHARACTER } from '@core/engine/DefaultCharacter'
 import { CharacterManager } from '@core/engine/CharacterManager'
+import { compileModuleAuthority, parseLocationRef } from '@core/engine/campaignAuthority'
 import manifest from '@data/modules/eldora_shadow/module_manifest.json'
+import modulePlot from '@data/modules/eldora_shadow/module_plot.json'
 import thornVillage from '@data/modules/eldora_shadow/areas/THORN_VILLAGE.json'
 
 export const INITIAL_DM_MESSAGE = {
@@ -23,7 +25,10 @@ const areaIndex = Object.fromEntries(allAreas.map((area) => [area.areaId, area])
 const monsterRaw = Object.values(monsterModules)[0]
 
 export const monsterLibrary = Array.isArray(monsterRaw) ? monsterRaw : monsterRaw?.default || []
-export { manifest }
+export const modulePlotData = modulePlot
+export const allAreaData = allAreas
+export const moduleAuthority = compileModuleAuthority(allAreas)
+export { manifest, parseLocationRef }
 
 export function cloneData(value) {
   if (typeof structuredClone === 'function') {
@@ -31,19 +36,6 @@ export function cloneData(value) {
   }
 
   return JSON.parse(JSON.stringify(value))
-}
-
-export function parseLocationRef(locationRef, fallbackAreaId) {
-  if (typeof locationRef !== 'string') {
-    return { areaId: fallbackAreaId, locationId: '' }
-  }
-
-  const [areaId, locationId] = locationRef.split(':')
-  if (locationId) {
-    return { areaId: areaId || fallbackAreaId, locationId }
-  }
-
-  return { areaId: fallbackAreaId, locationId: locationRef }
 }
 
 function loadPreferredCharacter(options = {}) {
@@ -86,6 +78,9 @@ export function buildDefaultGameState(options = {}) {
       areaId: startingLocation.areaId,
       locationId: startingLocation.locationId,
       tags: [],
+    },
+    sceneRuntime: {
+      claimedItemsBySceneId: {},
     },
   }
 }

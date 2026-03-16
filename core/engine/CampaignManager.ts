@@ -6,7 +6,11 @@ import { CombatEngine } from "./CombatEngine.js";
 import { CharacterManager } from "./CharacterManager.js";
 import { applyCampaignAction } from "./campaignActionEffects.js";
 import type { CampaignEventFactory } from "./campaignActionEffects.js";
-import { hasMonsterDefinition } from "./campaignMonsterUtils.js";
+import {
+  getSceneAuthority,
+  type ModuleAuthority,
+} from "./campaignAuthority.js";
+import type { ActiveTriggerState } from "../session/EngineState.js";
 import {
   isPlayerRollRequest,
   isValidCheckPayload,
@@ -16,7 +20,11 @@ import {
   parseListPayload,
 } from "./campaignPayloadUtils.js";
 import {
-  getConnectivityMap,
+  isPlotUpdateAllowed,
+  type ModulePlotLike,
+} from "./campaignPlotUtils.js";
+import {
+  hasClaimedSceneItem,
   isRescueWindowOpen,
   normalizeInitialState,
 } from "./campaignStateUtils.js";
@@ -39,6 +47,8 @@ export class CampaignManager {
   private state: EngineState;
   private currentAreaData: any;
   private manifest: any;
+  private modulePlotData: ModulePlotLike | null = null;
+  private moduleAuthority: ModuleAuthority | null = null;
   private combatEngine: CombatEngine;
   private eventSequence: number = 0;
 
@@ -54,9 +64,10 @@ export class CampaignManager {
   /**
    * 初始化战役：加载剧本清单与起始区域
    */
-  initialize(manifest: any, areaData: any) {
+  initialize(manifest: any, areaData: any, modulePlotData?: ModulePlotLike | null) {
     this.manifest = manifest;
     this.currentAreaData = areaData;
+    this.modulePlotData = modulePlotData || this.modulePlotData || null;
 
     // 如果 state 里的 variables 是空的，则尝试从 manifest 初始化
     if (!this.state.variables) {
@@ -145,13 +156,7 @@ export class CampaignManager {
   private validateAction(action: ParsedAction): boolean {
     switch (action.type) {
       case "@MOVE":
-        // 校验地理连通性
-        const connectivity = getConnectivityMap(this.currentAreaData);
-        return ActionProcessor.validateMove(
-          this.state.currentLocationId,
-          action.payload,
-          connectivity,
-        );
+        return this.validateMoveAction(action.payload);
 
       case "@ATTR_UPDATE":
         // 简单的格式校验 e.g. "HP:-5"
@@ -184,7 +189,12 @@ export class CampaignManager {
       case "@PLOT_UPDATE":
         return (
           action.payload.trim().length > 0 &&
-          !this.state.plotProgress.includes(action.payload.trim())
+          !this.state.plotProgress.includes(action.payload.trim()) &&
+          isPlotUpdateAllowed(
+            this.modulePlotData,
+            this.state.plotProgress,
+            action.payload.trim(),
+          )
         );
 
       case "@VAR_UPDATE":
@@ -192,17 +202,22 @@ export class CampaignManager {
 
       case "@INIT_COMBAT":
       case "@COMBAT_START":
-        return parseListPayload(action.payload).every((id) =>
-          hasMonsterDefinition(this.monsterLibrary, id),
-        );
+        return this.validateCombatStart(action.payload);
 
       case "@ITEM_ADD": {
         const itemName = action.payload.trim();
         if (!itemName) return false;
-        const location = this.currentAreaData?.locations?.find(
-          (l: any) => l.id === this.state.currentLocationId,
-        );
-        const allowedItems: string[] = location?.items || [];
+        if (hasClaimedSceneItem(this.state, itemName)) {
+          return false;
+        }
+        const currentLocation = this.getCurrentLocationData();
+        const allowedItems =
+          this.getCurrentSceneAuthority()?.itemNames ||
+          (Array.isArray(currentLocation?.items)
+            ? currentLocation.items
+                .map((item: any) => String(item || "").trim())
+                .filter(Boolean)
+            : []);
         return allowedItems.some(
           (allowed: string) => allowed.toLowerCase() === itemName.toLowerCase(),
         );
@@ -224,7 +239,7 @@ export class CampaignManager {
    * 状态应用逻辑 (The Mutator)
    */
   private applyAction(action: ParsedAction): KnownEngineEvent[] {
-    return applyCampaignAction({
+    const events = applyCampaignAction({
       action,
       state: this.state,
       combatEngine: this.combatEngine,
@@ -233,6 +248,13 @@ export class CampaignManager {
       buildCombatId: () => this.buildCombatId(),
       createEvent: this.createEvent.bind(this) as CampaignEventFactory,
     });
+
+    if (action.type === "@COMBAT_START" && this.state.triggerRuntime?.activeTrigger) {
+      this.state.triggerRuntime.activeTrigger = null;
+      console.log("[Campaign] 触发器已消费，activeTrigger 清除");
+    }
+
+    return events;
   }
 
   private onAreaLoad?: (areaId: string) => void;
@@ -244,6 +266,53 @@ export class CampaignManager {
 
   setMonsterLibrary(monsters: any[]) {
     this.monsterLibrary = monsters;
+  }
+
+  setModulePlot(modulePlotData: ModulePlotLike | null) {
+    this.modulePlotData = modulePlotData;
+  }
+
+  setModuleAuthority(moduleAuthority: ModuleAuthority | null) {
+    this.moduleAuthority = moduleAuthority;
+  }
+
+  /**
+   * 检定结果回调：查找当前 scene 是否有匹配的 trigger，若有则激活并写入 triggerRuntime
+   */
+  applyCheckResult(outcome: { skill: string; dc: number; isSuccess: boolean }): void {
+    const sceneAuthority = this.getCurrentSceneAuthority();
+    if (!sceneAuthority || sceneAuthority.triggers.length === 0) {
+      return;
+    }
+
+    const normalizedSkill = outcome.skill.trim().toLowerCase();
+    const trigger = sceneAuthority.triggers.find(
+      (t) => t.when === "check_resolved" &&
+             t.skill.toLowerCase() === normalizedSkill &&
+             t.dc === outcome.dc,
+    );
+    if (!trigger) {
+      return;
+    }
+
+    const branchKey = outcome.isSuccess ? "success" : "failure";
+    const branch = trigger.branches[branchKey];
+    if (!branch) {
+      return;
+    }
+
+    const activeTrigger: ActiveTriggerState = {
+      triggerId: trigger.id,
+      branch: branchKey,
+      narrativeHint: branch.narrativeHint,
+      deployable: branch.deployable,
+    };
+
+    if (!this.state.triggerRuntime) {
+      this.state.triggerRuntime = { activeTrigger: null };
+    }
+    this.state.triggerRuntime.activeTrigger = activeTrigger;
+    console.log(`[Campaign] 触发器激活: ${trigger.id} (${branchKey})`);
   }
 
   private loadArea(areaId: string) {
@@ -273,12 +342,79 @@ export class CampaignManager {
     return this.currentAreaData;
   }
 
+  getModulePlotData() {
+    return this.modulePlotData;
+  }
+
   getCombatEngine() {
     return this.combatEngine;
   }
 
   getState(): EngineState {
     return this.state;
+  }
+
+  private getCurrentLocationData() {
+    return this.currentAreaData?.locations?.find(
+      (location: any) => location.id === this.state.currentLocationId,
+    );
+  }
+
+  private getCurrentSceneAuthority() {
+    return getSceneAuthority(
+      this.moduleAuthority,
+      this.state.currentAreaId,
+      this.state.currentLocationId,
+    );
+  }
+
+  private validateMoveAction(payload: string): boolean {
+    const requestedRef = payload.trim();
+    if (!requestedRef) {
+      return false;
+    }
+
+    const currentScene = this.getCurrentSceneAuthority();
+    if (currentScene) {
+      return currentScene.exits.some((exit) => exit.ref === requestedRef);
+    }
+
+    const currentLocation = this.getCurrentLocationData();
+    const allowedConnections = Array.isArray(currentLocation?.connections)
+      ? currentLocation.connections
+      : [];
+    return allowedConnections.includes(requestedRef);
+  }
+
+  private validateCombatStart(payload: string): boolean {
+    const requestedIds = parseListPayload(payload);
+    if (requestedIds.length === 0) {
+      return false;
+    }
+
+    const activeTrigger = this.state.triggerRuntime?.activeTrigger;
+    if (activeTrigger) {
+      const allowed = new Set(activeTrigger.deployable.encounterIds || []);
+      if (allowed.size === 0) {
+        return false;
+      }
+      return requestedIds.every((id) => allowed.has(id));
+    }
+
+    const currentLocation = this.getCurrentLocationData();
+    const allowedEncounterIds =
+      this.getCurrentSceneAuthority()?.encounterIds ||
+      (Array.isArray(currentLocation?.encounters)
+        ? currentLocation.encounters
+            .map((entry: any) => String(entry || "").trim())
+            .filter(Boolean)
+        : []);
+
+    if (allowedEncounterIds.length === 0) {
+      return false;
+    }
+
+    return requestedIds.every((id) => allowedEncounterIds.includes(id));
   }
 
   private buildCombatId(): string {

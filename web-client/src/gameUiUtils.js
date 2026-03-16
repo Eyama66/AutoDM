@@ -11,3 +11,12 @@ export {
   MESSAGE_SOURCE,
   sanitizePlayerMessageForAi,
 } from './gameUi/messageTransport'
+export { buildSessionUiState } from './gameUi/sessionUiState'
+export {
+  buildEngineActionTags,
+  buildSceneIntentOptions,
+  buildSystemTurnResolutionPrompt,
+  resolveTurnIntent,
+  serializeEngineActions,
+  stripResolvedActionTags,
+} from './gameUi/turnIntentRuntime'

@@ -7,7 +7,10 @@ import {
   parseKeyValuePayload,
   parseListPayload,
 } from "./campaignPayloadUtils.js";
-import { buildActiveScene } from "./campaignStateUtils.js";
+import {
+  buildActiveScene,
+  markSceneItemClaimed,
+} from "./campaignStateUtils.js";
 import { CombatEngine } from "./CombatEngine.js";
 import type { EngineState } from "../session/EngineState.js";
 import type { EventSource, KnownEngineEvent } from "../session/EngineEvent.js";
@@ -339,11 +342,12 @@ export function applyCampaignAction({
       const newItem = {
         id: `item_found_${Date.now()}`,
         name: itemName,
-        type: "item",
+        type: "item" as const,
         quantity: 1,
         equipped: false,
       };
       state.characterSheet.inventory.push(newItem);
+      markSceneItemClaimed(state, itemName);
 
       emittedEvents.push(
         createEvent("ITEM_ACQUIRED", {

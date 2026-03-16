@@ -92,6 +92,40 @@ function renderDefaultInput({
   )
 }
 
+function renderSceneIntentOptions({
+  sceneIntentOptions,
+  handleSceneIntent,
+  isThinking,
+  hasPendingDiceAction,
+}) {
+  if (!Array.isArray(sceneIntentOptions) || sceneIntentOptions.length === 0) {
+    return null
+  }
+
+  const isBlocked = isThinking || hasPendingDiceAction
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {sceneIntentOptions.map((option) => (
+        <button
+          key={option.id}
+          type="button"
+          onClick={() => handleSceneIntent(option)}
+          disabled={isBlocked}
+          className={clsx(
+            'rounded border px-3 py-1.5 text-xs transition-colors',
+            isBlocked
+              ? 'border-parchment-800/40 text-parchment-800'
+              : 'border-parchment-800/70 text-parchment-400 hover:border-primary-700 hover:text-primary-300',
+          )}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export function InteractionFooter(props) {
   const {
     isCombatActive,
@@ -109,8 +143,10 @@ export function InteractionFooter(props) {
     setIsInputComposing,
     handleInputKeyDown,
     handleSubmitInput,
+    handleSceneIntent,
     handleResolveEndgame,
     handleResetSession,
+    sceneIntentOptions,
   } = props
 
   return (
@@ -123,6 +159,13 @@ export function InteractionFooter(props) {
               : '你当前 HP 已归零，已进入终局裁定。系统不会再等待你的普通输入；接下来应由 DM 继续判断你是否彻底死亡，或是否仍有一线生机。'}
           </div>
         )}
+
+        {!isSessionCompleted && !isTerminalLocked && !isCombatActive && renderSceneIntentOptions({
+          sceneIntentOptions,
+          handleSceneIntent,
+          isThinking,
+          hasPendingDiceAction,
+        })}
 
         {isCombatActive && renderCombatTracker(initiativeOrder, characterId)}
 

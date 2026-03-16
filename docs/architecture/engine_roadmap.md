@@ -2,6 +2,8 @@
 
 这份文档定义 AutoDM 接下来的修改方向。目标不是把它继续堆成一个“会讲故事的网页 Demo”，而是把它收敛成一个可扩展、可验证、可承载单人/多人跑团的 TRPG engine。
 
+配套的“严格剧本边界”设计与分阶段落地计划见 `docs/architecture/strict_story_boundary_design.md`。
+
 ## 1. 目标
 
 AutoDM 的长期目标：
@@ -479,15 +481,15 @@ breakdown=1d6(4)+DEX(+3)
 
 下面的顺序是调整后的推荐执行顺序。原则是：
 
-- 先把 `core` 和前端本地 runtime 做完整
-- 让浏览器先承载一套“像后端一样工作的本地权威运行时”
-- 最后再把这套 runtime 迁到真正的后端服务
+- 先把 `core`、契约层和前端 adapter 收口
+- 让浏览器承担 **client / mock / debug / adapter** 职责，而不是最终权威 runtime
+- 等 AI 合约、事件模型和上下文契约稳定后，再做真正的后端承接
 
 这意味着：
 
 - 现阶段不再继续让 React 组件直接决定游戏状态
-- 但允许浏览器暂时承载权威 session runtime
-- 后端迁移应发生在事件流、AI 合约、memory schema 都稳定之后
+- 也不继续把“真实裁定逻辑”深挖在前端里
+- 后端迁移不是“以后再想”，而是默认目标承载位置
 
 ### Phase 0: 基线收紧
 
@@ -544,25 +546,25 @@ breakdown=1d6(4)+DEX(+3)
 - 给定同一初始 state + 同一事件序列，结果完全一致
 - 关键逻辑能脱离 UI 单独测试
 
-### Phase 2: 本地权威 Session Runtime
+### Phase 2: 前端 Session Adapter / Shadow Runtime
 
 目标：
 
-- 在浏览器内先跑通一套真正的 session runtime
-- 让前端页面只通过 gateway / adapter 和 runtime 交互
+- 在浏览器内先跑通一套 adapter / mock / shadow 形态
+- 让前端页面只通过 gateway / adapter 和结构化 state 交互
 
 工作项：
 
 - 把 `pending resolution`、战斗态、终局态等待处理状态纳入 `EngineState`
-- 引入最小 `LocalSessionGateway` / runtime adapter
+- 引入最小 `LocalSessionGateway` / adapter
 - 让 UI 通过事件和 state snapshot 驱动，而不是直接拼“最后一条 DM 消息”
-- 用本地快照 + 事件流支撑 save/load/replay
+- 用本地快照 + 事件流支撑 save/load/replay / debug
 
 验收标准：
 
-- 浏览器刷新后可以恢复同一局的权威状态
+- 浏览器刷新后可以恢复同一局的本地会话状态
 - React 组件不再自行推断 pending check / pending roll 这类核心状态
-- 本地 runtime 已经具备未来迁移到服务端的形状
+- 前端 adapter 已经具备未来迁移到服务端的形状
 
 ### Phase 3: AI 合约改造
 
@@ -708,20 +710,20 @@ breakdown=1d6(4)+DEX(+3)
    - 先做 scene summary 和 campaign summary 两层
 
 6. **最后再迁移到最小 server runtime**
-   - 这时后端只是换承载位置，不是重写系统
+   - 这时后端接管权威裁定与状态落地，前端保留 adapter / UI 职责
 
 这个顺序的好处是：
 
 - 不会一上来陷入多人复杂度
 - 不会太早把不稳定逻辑固化进后端
 - 不会先写一堆 prompt 再返工 runtime
-- 能先得到一个“引擎边界清晰、前端可自跑”的新基线
+- 能先得到一个“契约边界清晰、前端职责收口”的新基线
 
 ## 8. 近期不要做的事情
 
 为了避免项目长歪，以下几件事建议后放：
 
-- 不要现在就急着上后端再反推引擎设计
+- 不要现在就在前端里做深的 authoritative adjudication / reducer 编排
 - 不要现在就做复杂的 AI 自动内容生成器
 - 不要现在就引入完整的模组编辑器
 - 不要先做大而全的战役 SaaS 账户体系

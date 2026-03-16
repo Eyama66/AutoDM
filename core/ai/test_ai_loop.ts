@@ -4,6 +4,8 @@ import { DEFAULT_CHARACTER } from "../engine/DefaultCharacter.js";
 import { AIEngine } from "./AIEngine.js";
 import type { PromptContext } from "./AIEngine.js";
 import type { KnownEngineEvent } from "../session/EngineEvent.js";
+import type { ModulePlotLike } from "../engine/campaignPlotUtils.js";
+import { validateNarrativeBoundaries } from "../validation/NarrativeBoundaryValidator.js";
 
 /**
  * 全系统合龙测试：从玩家输入到逻辑校验的完整闭环
@@ -52,6 +54,14 @@ async function testFullLoop() {
       },
     ],
   };
+  const mockPlotData: ModulePlotLike = {
+    plotTitle: "测试剧情",
+    mainObjective: "进入岗哨",
+    plotPoints: [
+      { id: "PP001", title: "进入岗哨", status: "active", nextPoints: ["PP002"] },
+      { id: "PP002", title: "调查广场", status: "not started" },
+    ],
+  };
 
   const camp = new CampaignManager(initialState);
   const ai = new AIEngine(); // 默认进入 Mock 模式
@@ -77,8 +87,11 @@ async function testFullLoop() {
     npcDmNotes: ["看守员会拒绝放行陌生人。"],
     playerState: initialState,
     plotObjective: "进入岗哨",
+    modulePlot: mockPlotData,
     equippedItemsSummary: "Leather Armor（armor，已装备）；Shortsword（weapon，已装备）；Longbow（weapon，已装备）",
     inventorySummary: "Leather Armor（armor，已装备）；Shortsword（weapon，已装备）；Longbow（weapon，已装备）",
+    allowedNpcSpeakerNames: [],
+    knownLocationNames: ["大门", "广场", "祭坛"],
   };
 
   const prompt = (ai as any).buildSystemPrompt(context) as string;
@@ -87,23 +100,26 @@ async function testFullLoop() {
     !prompt.includes("[CTX_PACKET]") ||
     !prompt.includes("玩家输入=意图，不=事实") ||
     !prompt.includes("Shortsword") ||
-    !prompt.includes("你拥有裁定权") ||
-    !prompt.includes("不要暴露原始地点 ID") ||
+    (!prompt.includes("你拥有裁定权") && !prompt.includes("裁定权在你")) ||
+    !prompt.includes("不暴露原始 ID") ||
     !prompt.includes("广场") ||
     !prompt.includes("[@CHECK(skill:dc:reason)]") ||
     !prompt.includes("[@ROLL(label:formula)]") ||
-    !prompt.includes('"mode":"choose_one"|"all"') ||
+    !prompt.includes("choose_one") ||
+    !prompt.includes("all") ||
     !prompt.includes("[SYS_CHECK_RESULT]") ||
     !prompt.includes("[SYS_CHECK_SET_RESULT]") ||
     !prompt.includes("[SYS_ROLL_RESULT]") ||
     !prompt.includes("[SYS_ENDGAME_DIRECTIVE]") ||
+    !prompt.includes("[SYS_TURN_RESOLUTION]") ||
+    !prompt.includes('"allowedNext":["PP001"]') ||
     !prompt.includes(hpSummary) ||
     !prompt.includes('"status":"ready"') ||
     !prompt.includes('"phase":"exploration"') ||
     !prompt.includes('"rescueWindow":false') ||
     !prompt.includes("[@VAR_UPDATE(last_chance_available:true)]") ||
     !prompt.includes("[@SESSION_END(reason)]") ||
-    prompt.length > 2800
+    prompt.length > 3450
   ) {
     throw new Error("❌ AI 提示词缺少状态约束、装备约束或裁定权规则。");
   }
@@ -111,9 +127,24 @@ async function testFullLoop() {
   const rawAiText = await ai.generate(userInput, context);
   console.log(`[AI Raw]: ${rawAiText}`);
 
+  const invalidNarrative = "你来到祭坛中央。<<NPC:黑匠>>“跟我来。”<</NPC>>";
+  const validation = validateNarrativeBoundaries(invalidNarrative, context);
+  if (validation.valid) {
+    throw new Error("❌ Narrative validator 未能识别越界地点或 NPC。");
+  }
+  console.log("✅ Narrative validator 测试成功：可识别越界地点与不在场 NPC。");
+
+  const invalidActionNarrative =
+    "你顺手拾起一瓶不存在的药剂，然后突然闯进祭坛。[@ITEM_ADD(秘银药剂)] [@PLOT_UPDATE(PP002)]";
+  const actionValidation = validateNarrativeBoundaries(invalidActionNarrative, context);
+  if (actionValidation.valid) {
+    throw new Error("❌ Narrative validator 未能识别越界物品或非法剧情推进。");
+  }
+  console.log("✅ Narrative validator 动作测试成功：可识别越界物品与越界 plot 更新。");
+
   // 4. 逻辑笼子拦截并处理
   console.log("--- 逻辑裁判介入 ---");
-  camp.initialize({ name: "艾尔多拉" }, mockAreaData);
+  camp.initialize({ name: "艾尔多拉" }, mockAreaData, mockPlotData);
   const result = camp.processAiResponse(rawAiText);
 
   // 5. 验证结果

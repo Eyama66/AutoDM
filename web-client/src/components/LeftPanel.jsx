@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence } from 'framer-motion'
 import { Dices, Shield, X } from 'lucide-react'
 import clsx from 'clsx'
 import { calculateModifier } from '@core/rules/CoreRules'

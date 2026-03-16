@@ -78,6 +78,12 @@ export function buildInitialSession() {
       : typeof persistedSession.gameState.phase === 'string'
         ? persistedSession.gameState.phase
         : defaultState.phase,
+    sceneRuntime: {
+      claimedItemsBySceneId:
+        persistedSession.gameState.sceneRuntime?.claimedItemsBySceneId ||
+        defaultState.sceneRuntime?.claimedItemsBySceneId ||
+        {},
+    },
   }
 
   if (mergedState.sessionMode === 'solo') {

@@ -27,11 +27,17 @@ import {
 import {
   MESSAGE_SOURCE,
   buildAiTransportMessage,
+  buildEngineActionTags,
+  buildSceneIntentOptions,
+  buildSessionUiState,
+  buildSystemTurnResolutionPrompt,
   deriveSystemActionFromNarrative,
   parseCheckAction,
-  parseCheckSetAction,
   parseRollAction,
+  resolveTurnIntent,
   rollFormula,
+  serializeEngineActions,
+  stripResolvedActionTags,
 } from './gameUiUtils'
 import {
   buildEndgameResolutionPrompt,
@@ -49,6 +55,30 @@ function buildLoggedPlayerMessage(content) {
     role: 'user',
     content,
     meta: { source: MESSAGE_SOURCE.PLAYER },
+  }
+}
+
+function buildLiveSceneContext() {
+  const state = campaign.getState()
+  const currentArea = campaign.getCurrentAreaData()
+  const currentLocation = currentArea?.locations?.find(
+    (location) => location.id === state.currentLocationId,
+  )
+
+  return {
+    state,
+    currentArea,
+    currentLocation,
+    context: buildPromptContext(state, currentArea, currentLocation),
+  }
+}
+
+function buildLiveRuntimeSnapshot(messages, isThinking) {
+  const liveScene = buildLiveSceneContext()
+
+  return {
+    ...liveScene,
+    sessionUiState: buildSessionUiState(liveScene.state, messages, isThinking),
   }
 }
 
@@ -118,6 +148,9 @@ const App = () => {
       messageMeta?.source === MESSAGE_SOURCE.SYSTEM_CHECK ||
       messageMeta?.source === MESSAGE_SOURCE.SYSTEM_ROLL ||
       messageMeta?.source === MESSAGE_SOURCE.SYSTEM_DIRECTIVE
+    const resolvedActionTags = Array.isArray(messageMeta?.resolvedActionTags)
+      ? messageMeta.resolvedActionTags.filter(Boolean)
+      : []
     const isTerminalLocked =
       liveState.phase === 'endgame' && liveState.variables?.last_chance_available !== true
     const isSessionCompleted = liveState.phase === 'completed'
@@ -151,12 +184,7 @@ const App = () => {
     setIsThinking(true)
 
     try {
-      const state = campaign.getState()
-      const currentArea = campaign.getCurrentAreaData()
-      const currentLoc = currentArea?.locations?.find(
-        (location) => location.id === state.currentLocationId,
-      )
-      const context = buildPromptContext(state, currentArea, currentLoc)
+      const { context } = buildLiveSceneContext()
       const aiHistory = [...messages, ...prependedMessages].map(buildAiTransportMessage)
       const aiInput =
         messageMeta?.source === MESSAGE_SOURCE.SYSTEM_CHECK ||
@@ -172,13 +200,17 @@ const App = () => {
         messageMeta?.source === MESSAGE_SOURCE.SYSTEM_DIRECTIVE
           ? 'system'
           : 'user'
-      const rawAiResponse = await aiEngine.generate(aiInput, context, aiHistory, {
+      const rawAiResponse = await aiEngine.generateStrictResponse(aiInput, context, aiHistory, {
         inputRole: aiInputRole,
       })
-      const { cleanText, validatedActions } = campaign.processAiResponse(rawAiResponse)
-      const explicitActionTags = validatedActions.map((action) => action.originalTag)
+      const effectiveAiResponse = stripResolvedActionTags(rawAiResponse, resolvedActionTags)
+      const processedResult = campaign.processAiResponse(effectiveAiResponse)
+      const explicitActionTags = processedResult.validatedActions.map((action) => action.originalTag)
       const nextState = campaign.getState()
-      const derivedSystemActionCandidate = deriveSystemActionFromNarrative(cleanText, explicitActionTags)
+      const derivedSystemActionCandidate = deriveSystemActionFromNarrative(
+        processedResult.cleanText,
+        explicitActionTags,
+      )
       const shouldSuppressDerivedAction =
         (derivedSystemActionCandidate?.startsWith('[@CHECK(') &&
           CharacterManager.isDowned(nextState.characterSheet) &&
@@ -189,7 +221,7 @@ const App = () => {
       const dmMsg = {
         id: Date.now() + 1,
         role: 'dm',
-        content: cleanText,
+        content: processedResult.cleanText,
         actions: derivedSystemAction ? [...explicitActionTags, derivedSystemAction] : explicitActionTags,
       }
 
@@ -211,6 +243,51 @@ const App = () => {
     } finally {
       setIsThinking(false)
     }
+  }
+
+  const handleSceneIntent = async (intentOption) => {
+    const { context, sessionUiState } = buildLiveRuntimeSnapshot(messages, isThinking)
+
+    if (
+      !intentOption ||
+      isThinking ||
+      isCombatActive ||
+      sessionUiState.isTerminalLocked ||
+      sessionUiState.isSessionCompleted ||
+      sessionUiState.hasPendingDiceAction
+    ) {
+      return
+    }
+
+    const resolution = resolveTurnIntent(intentOption, context)
+    const serializedActions = serializeEngineActions(resolution.engineActions)
+    const resolvedActionTags = buildEngineActionTags(resolution.engineActions)
+
+    if (serializedActions) {
+      campaign.processAiResponse(serializedActions)
+    }
+
+    const { context: nextContext } = buildLiveSceneContext()
+    const hiddenPrompt = buildSystemTurnResolutionPrompt(intentOption, resolution, nextContext)
+
+    setInputValue('')
+    await handleSend(
+      hiddenPrompt,
+      null,
+      {
+        source: MESSAGE_SOURCE.SYSTEM_DIRECTIVE,
+        hiddenFromLog: true,
+        aiContent: hiddenPrompt,
+        resolvedActionTags,
+      },
+      {
+        prependedMessages: [
+          buildLoggedPlayerMessage(
+            resolution.playerPrompt || intentOption.playerPrompt || intentOption.label,
+          ),
+        ],
+      },
+    )
   }
 
   const handleRollCheck = (pendingCheck, playerContext = '') => {
@@ -236,6 +313,7 @@ const App = () => {
     }
 
     const outcome = resolveCheckOutcome(character, parsedCheck)
+    campaign.applyCheckResult(outcome)
     const trimmedContext = playerContext.trim()
     const hiddenPrompt = buildSystemCheckResultPrompt(outcome, trimmedContext)
     const displayLabel = buildCheckDisplayLabel(character, outcome)
@@ -334,36 +412,15 @@ const App = () => {
     })
   }
 
-  const currentState = campaign.getState()
-  const currentArea = campaign.getCurrentAreaData()
-  const currentLocation = currentArea?.locations?.find(
-    (location) => location.id === currentState.currentLocationId,
+  const {
+    state: currentState,
+    currentArea,
+    currentLocation,
+    sessionUiState,
+  } = buildLiveRuntimeSnapshot(messages, isThinking)
+  const sceneIntentOptions = buildSceneIntentOptions(
+    buildPromptContext(currentState, currentArea, currentLocation),
   )
-  const isCharacterDowned = CharacterManager.isDowned(currentState.characterSheet)
-  const rescueWindowOpen =
-    currentState.phase === 'endgame' && currentState.variables?.last_chance_available === true
-  const isTerminalLocked = currentState.phase === 'endgame' && !rescueWindowOpen
-  const isSessionCompleted = currentState.phase === 'completed'
-  const sessionEndReason =
-    typeof currentState.variables?.session_end_reason === 'string'
-      ? currentState.variables.session_end_reason
-      : ''
-  const lastDmMsg = messages.length > 0 ? messages[messages.length - 1] : null
-  const pendingCheckAction =
-    lastDmMsg?.role === 'dm' && !isThinking && !isSessionCompleted && (!isCharacterDowned || rescueWindowOpen)
-      ? lastDmMsg.actions?.find((action) => action.startsWith('[@CHECK('))
-      : null
-  const pendingCheckSetAction =
-    lastDmMsg?.role === 'dm' && !isThinking && !isSessionCompleted && (!isCharacterDowned || rescueWindowOpen)
-      ? lastDmMsg.actions?.find((action) => action.startsWith('[@CHECK_SET('))
-      : null
-  const pendingCheck = pendingCheckAction ? parseCheckAction(pendingCheckAction) : null
-  const pendingCheckSet = pendingCheckSetAction ? parseCheckSetAction(pendingCheckSetAction) : null
-  const pendingRollAction =
-    lastDmMsg?.role === 'dm' && !isThinking && !isSessionCompleted
-      ? lastDmMsg.actions?.find((action) => action.startsWith('[@ROLL('))
-      : null
-  const pendingFormulaRoll = pendingRollAction ? parseRollAction(pendingRollAction) : null
 
   return (
     <div
@@ -377,10 +434,10 @@ const App = () => {
       <LeftPanel
         character={character}
         isThinking={isThinking}
-        pendingCheck={pendingCheck}
-        pendingCheckSet={pendingCheckSet}
-        pendingFormulaRoll={pendingFormulaRoll}
-        pendingRollAction={pendingRollAction}
+        pendingCheck={sessionUiState.pendingCheck}
+        pendingCheckSet={sessionUiState.pendingCheckSet}
+        pendingFormulaRoll={sessionUiState.pendingFormulaRoll}
+        pendingRollAction={sessionUiState.pendingRollAction}
         inputValue={inputValue}
         setInputValue={setInputValue}
         isInputComposing={isInputComposing}
@@ -453,20 +510,22 @@ const App = () => {
           initiativeOrder={campaign.getCombatEngine().getInitiativeOrder()}
           characterId={character.id}
           isThinking={isThinking}
-          isCharacterDowned={isCharacterDowned}
-          isTerminalLocked={isTerminalLocked}
-          isSessionCompleted={isSessionCompleted}
-          sessionEndReason={sessionEndReason}
-          rescueWindowOpen={rescueWindowOpen}
-          hasPendingDiceAction={!!(pendingCheck || pendingCheckSet || pendingFormulaRoll)}
+          isCharacterDowned={sessionUiState.isCharacterDowned}
+          isTerminalLocked={sessionUiState.isTerminalLocked}
+          isSessionCompleted={sessionUiState.isSessionCompleted}
+          sessionEndReason={sessionUiState.sessionEndReason}
+          rescueWindowOpen={sessionUiState.rescueWindowOpen}
+          hasPendingDiceAction={sessionUiState.hasPendingDiceAction}
           inputValue={inputValue}
           setInputValue={setInputValue}
           isInputComposing={isInputComposing}
           setIsInputComposing={setIsInputComposing}
           handleInputKeyDown={handleInputKeyDown}
           handleSubmitInput={handleSubmitInput}
+          handleSceneIntent={handleSceneIntent}
           handleResolveEndgame={handleResolveEndgame}
           handleResetSession={resetSession}
+          sceneIntentOptions={sceneIntentOptions}
         />
       </main>
 

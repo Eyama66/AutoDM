@@ -29,6 +29,27 @@ export interface CombatState {
   activeTurnParticipantId?: string;
 }
 
+export interface SceneRuntimeState {
+  claimedItemsBySceneId: Record<string, string[]>;
+}
+
+export interface ActiveTriggerDeployable {
+  encounterIds?: string[];
+  plotNodeIds?: string[];
+  itemIds?: string[];
+}
+
+export interface ActiveTriggerState {
+  triggerId: string;
+  branch: "success" | "failure" | string;
+  narrativeHint: string;
+  deployable: ActiveTriggerDeployable;
+}
+
+export interface TriggerRuntimeState {
+  activeTrigger: ActiveTriggerState | null;
+}
+
 /**
  * EngineState 是 AutoDM 未来的权威状态快照。
  * 现阶段保留 legacy 字段以兼容当前单人浏览器版本。
@@ -47,6 +68,8 @@ export interface EngineState {
   phase: SessionPhase;
   activeScene?: SceneState;
   combat?: CombatState;
+  sceneRuntime?: SceneRuntimeState;
+  triggerRuntime?: TriggerRuntimeState;
 }
 
 export type GameState = EngineState;

@@ -27,6 +27,10 @@ export function normalizeInitialState(initialState: EngineState): EngineState {
       locationId: initialState.currentLocationId,
       tags: [],
     },
+    sceneRuntime: {
+      claimedItemsBySceneId:
+        initialState.sceneRuntime?.claimedItemsBySceneId || {},
+    },
     variables: {
       last_chance_available: false,
       ...(initialState.variables || {}),
@@ -50,6 +54,61 @@ export function buildActiveScene(
     locationId: state.currentLocationId,
     tags: state.activeScene?.tags || [],
   };
+}
+
+export function getCurrentSceneId(state: EngineState): string {
+  return `${state.currentAreaId}:${state.currentLocationId}`;
+}
+
+export function getClaimedSceneItems(
+  state: EngineState,
+  sceneId: string = getCurrentSceneId(state),
+): string[] {
+  return state.sceneRuntime?.claimedItemsBySceneId?.[sceneId] || [];
+}
+
+export function hasClaimedSceneItem(
+  state: EngineState,
+  itemName: string,
+  sceneId: string = getCurrentSceneId(state),
+): boolean {
+  const normalizedItemName = String(itemName || "").trim().toLowerCase();
+  if (!normalizedItemName) {
+    return false;
+  }
+
+  return getClaimedSceneItems(state, sceneId).some(
+    (claimedItem) => claimedItem.trim().toLowerCase() === normalizedItemName,
+  );
+}
+
+export function markSceneItemClaimed(
+  state: EngineState,
+  itemName: string,
+  sceneId: string = getCurrentSceneId(state),
+): void {
+  const normalizedItemName = String(itemName || "").trim();
+  if (!normalizedItemName) {
+    return;
+  }
+
+  if (!state.sceneRuntime) {
+    state.sceneRuntime = { claimedItemsBySceneId: {} };
+  }
+
+  if (!state.sceneRuntime.claimedItemsBySceneId) {
+    state.sceneRuntime.claimedItemsBySceneId = {};
+  }
+
+  if (hasClaimedSceneItem(state, normalizedItemName, sceneId)) {
+    return;
+  }
+
+  const currentSceneClaims = getClaimedSceneItems(state, sceneId);
+  state.sceneRuntime.claimedItemsBySceneId[sceneId] = [
+    ...currentSceneClaims,
+    normalizedItemName,
+  ];
 }
 
 export function getConnectivityMap(currentAreaData: any): Record<string, string[]> {

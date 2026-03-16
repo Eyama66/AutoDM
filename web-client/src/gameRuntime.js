@@ -1,6 +1,8 @@
 import { CampaignManager } from '@core/engine/CampaignManager'
 import { AIEngine } from '@core/ai/AIEngine'
 import {
+  modulePlotData,
+  moduleAuthority,
   buildDefaultGameState,
   cloneData,
   getAreaById,
@@ -22,10 +24,12 @@ export const initialSession = buildInitialSession()
 export const campaign = new CampaignManager(initialSession.gameState)
 
 campaign.setMonsterLibrary(monsterLibrary)
+campaign.setModulePlot(modulePlotData)
+campaign.setModuleAuthority(moduleAuthority)
 campaign.setCallbacks((areaId) => {
-  campaign.initialize(manifest, getAreaById(areaId))
+  campaign.initialize(manifest, getAreaById(areaId), modulePlotData)
 })
-campaign.initialize(manifest, getAreaById(initialSession.gameState.currentAreaId))
+campaign.initialize(manifest, getAreaById(initialSession.gameState.currentAreaId), modulePlotData)
 
 export {
   buildDefaultGameState,
@@ -35,5 +39,6 @@ export {
   getAreaById,
   INITIAL_DM_MESSAGE,
   manifest,
+  moduleAuthority,
   persistSession,
 }

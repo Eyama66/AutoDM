@@ -6,8 +6,9 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test:campaign": "node --no-warnings=ExperimentalWarning --loader ts-node/esm engine/test_campaign.ts",
+    "test:adjudication": "node --no-warnings=ExperimentalWarning --loader ts-node/esm ai/test_adjudication.ts",
     "test:ai-loop": "node --no-warnings=ExperimentalWarning --loader ts-node/esm ai/test_ai_loop.ts",
-    "test": "npm run typecheck && npm run test:campaign && npm run test:ai-loop"
+    "test": "npm run typecheck && npm run test:campaign && npm run test:adjudication && npm run test:ai-loop"
   },
   "keywords": [],
   "author": "",

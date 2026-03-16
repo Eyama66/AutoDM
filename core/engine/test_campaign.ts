@@ -1,7 +1,9 @@
 import { CampaignManager } from "./CampaignManager.js";
 import type { GameState } from "./CampaignManager.js";
+import { compileModuleAuthority } from "./campaignAuthority.js";
 import { DEFAULT_CHARACTER } from "./DefaultCharacter.js";
 import type { KnownEngineEvent } from "../session/EngineEvent.js";
+import type { ModulePlotLike } from "./campaignPlotUtils.js";
 import {
   calculateCheckResult,
   resolveCheckSetup,
@@ -51,16 +53,42 @@ function testCampaignIntegration() {
     type: "manifest",
     globalVariables: {},
   };
+  const mockPlotData: ModulePlotLike = {
+    plotTitle: "测试剧情",
+    mainObjective: "进入岗哨",
+    plotPoints: [
+      {
+        id: "PP001",
+        title: "进入岗哨",
+        status: "active",
+        nextPoints: ["PP002"],
+      },
+      {
+        id: "PP002",
+        title: "调查广场",
+        status: "not started",
+      },
+    ],
+  };
   const mockAreaData = {
     areaId: "THORN_VILLAGE",
     locations: [
       { id: "E01", name: "大门", connections: ["E02"] },
-      { id: "E02", name: "广场", connections: ["E01", "E03"] },
+      {
+        id: "E02",
+        name: "广场",
+        connections: ["E01", "E03"],
+        encounters: ["fallen_guard"],
+        items: ["旧钥匙"],
+      },
     ],
   };
+  const moduleAuthority = compileModuleAuthority([mockAreaData]);
 
   const camp = new CampaignManager(initialState);
-  camp.initialize(mockManifest, mockAreaData);
+  camp.setModuleAuthority(moduleAuthority);
+  camp.initialize(mockManifest, mockAreaData, mockPlotData);
+  camp.setMonsterLibrary([{ id: "fallen_guard", name: "堕落卫兵" }]);
 
   // 3. 模拟一次包含“非法瞬移”的 AI 输出
   // AI 尝试从 E01 瞬移到 E03 (非法，中间隔着 E02)
@@ -135,6 +163,58 @@ function testCampaignIntegration() {
   } else {
     throw new Error(`❌ 移动回放测试失败 ${JSON.stringify(validMoveResult)}`);
   }
+
+  const invalidPlotResponse = "故事忽然跳到了后续调查。[@PLOT_UPDATE(PP002)]";
+  const invalidPlotResult = camp.processAiResponse(invalidPlotResponse);
+  if (invalidPlotResult.validatedActions.some((action) => action.type === "@PLOT_UPDATE")) {
+    throw new Error(`❌ 剧情护栏测试失败：不应允许直接推进 PP002 ${JSON.stringify(invalidPlotResult)}`);
+  }
+  console.log("✅ 剧情护栏测试成功：未解锁 plot node 会被拦截。");
+
+  const validPlotResponse = "你终于闯入岗哨。[@PLOT_UPDATE(PP001)]";
+  const validPlotResult = camp.processAiResponse(validPlotResponse);
+  if (
+    !validPlotResult.validatedActions.some((action) => action.type === "@PLOT_UPDATE") ||
+    !camp.getState().plotProgress.includes("PP001")
+  ) {
+    throw new Error(`❌ 剧情推进测试失败：PP001 应可推进 ${JSON.stringify(validPlotResult)}`);
+  }
+  console.log("✅ 剧情推进测试成功：当前 active plot node 可被正常落地。");
+
+  const validCombatResponse = "阴影中的卫兵扑了出来。[@COMBAT_START(fallen_guard)]";
+  const validCombatResult = camp.processAiResponse(validCombatResponse);
+  if (!validCombatResult.validatedActions.some((action) => action.type === "@COMBAT_START")) {
+    throw new Error(`❌ 战斗白名单测试失败：当前场景 encounter 应允许开战 ${JSON.stringify(validCombatResult)}`);
+  }
+  console.log("✅ 战斗白名单测试成功：当前场景允许的 encounter 可触发。");
+
+  camp.processAiResponse("[@COMBAT_END]");
+  const invalidCombatResponse = "一头凭空出现的狼人扑了出来。[@COMBAT_START(werewolf)]";
+  const invalidCombatResult = camp.processAiResponse(invalidCombatResponse);
+  if (invalidCombatResult.validatedActions.some((action) => action.type === "@COMBAT_START")) {
+    throw new Error(`❌ 战斗护栏测试失败：不应允许当前场景外的敌人开战 ${JSON.stringify(invalidCombatResult)}`);
+  }
+  console.log("✅ 战斗护栏测试成功：当前场景外 encounter 会被拦截。");
+
+  const validItemResponse = "你在喷泉边捡起一把旧钥匙。[@ITEM_ADD(旧钥匙)]";
+  const validItemResult = camp.processAiResponse(validItemResponse);
+  if (!validItemResult.validatedActions.some((action) => action.type === "@ITEM_ADD")) {
+    throw new Error(`❌ 物品白名单测试失败：当前场景可得物品应允许获取 ${JSON.stringify(validItemResult)}`);
+  }
+  console.log("✅ 物品白名单测试成功：当前场景允许的物品可获取。");
+
+  const duplicateItemResult = camp.processAiResponse(validItemResponse);
+  if (duplicateItemResult.validatedActions.some((action) => action.type === "@ITEM_ADD")) {
+    throw new Error(`❌ 物品去重测试失败：同一场景物品不应重复获取 ${JSON.stringify(duplicateItemResult)}`);
+  }
+  console.log("✅ 物品去重测试成功：同一场景物品不会被重复获取。");
+
+  const invalidItemResponse = "你在瓦砾间翻出一把不存在的圣剑。[@ITEM_ADD(圣剑)]";
+  const invalidItemResult = camp.processAiResponse(invalidItemResponse);
+  if (invalidItemResult.validatedActions.some((action) => action.type === "@ITEM_ADD")) {
+    throw new Error(`❌ 物品护栏测试失败：不应允许获取场景白名单外物品 ${JSON.stringify(invalidItemResult)}`);
+  }
+  console.log("✅ 物品护栏测试成功：当前场景外物品会被拦截。");
 
   const checkSetResponse =
     '你可以用蛮力硬扯，也可以借势滑脱。[@CHECK_SET({"mode":"choose_one","label":"脱离死尸拖拽","explanation":"你必须立刻在力量硬扯与身体滑脱之间选一种解法。","checks":[{"skill":"运动","dc":13,"reason":"死尸的指节已经扣进靴帮，你得靠纯粹蛮力撕开钳制。"},{"skill":"杂技","dc":13,"reason":"冻泥湿滑又贴身，你得借扭身与重心变化滑脱。"}]})]';
