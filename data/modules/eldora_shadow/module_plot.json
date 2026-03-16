@@ -6,32 +6,34 @@
       "id": "PP001",
       "title": "破门而入或智取",
       "description": "设法通过岗哨大门。玩家可以选择直接对抗看守、帮助看守寻找失踪的勋章、或者寻找坍塌的排水口潜入。",
-      "trigger": { "type": "variable_check", "value": "gate_unlocked:true" },
       "status": "active",
+      "nextPoints": ["PP002"],
       "plotImpact": "岗哨内部区域解锁"
     },
     {
       "id": "PP002",
       "title": "黑荆哨所的秘密",
       "description": "在哨所广场进行调查。通过药剂店或地下室收集到关于地底异变的碎片化情报。",
-      "trigger": { "type": "variable_check", "value": "found_secret_key:true" },
       "status": "not started",
+      "prerequisites": ["PP001"],
+      "nextPoints": ["PP003"],
       "plotImpact": "获得开启低语地窟的权限"
     },
     {
       "id": "PP003",
       "title": "幽灵的契约",
       "description": "在地窟中与幽灵祭司对话。你可以选择超度他（获取圣物武器）或奴役他（获取阴影魔法）。",
-      "trigger": { "type": "variable_check", "value": "priest_interaction:true" },
       "status": "not started",
+      "prerequisites": ["PP002"],
+      "nextPoints": ["PP004"],
       "plotImpact": "决定最终战的增益属性"
     },
     {
       "id": "PP004",
       "title": "绯红之心的终结",
       "description": "在圣所核心摧毁晶体。结局将根据你之前的选择分歧为：完全净化、阴影共生、或同归于尽。",
-      "trigger": { "type": "variable_check", "value": "crystal_destroyed:true" },
       "status": "not started",
+      "prerequisites": ["PP003"],
       "plotImpact": "剧本多结局达成"
     }
   ],

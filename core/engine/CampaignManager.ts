@@ -24,6 +24,7 @@ import {
   type ModulePlotLike,
 } from "./campaignPlotUtils.js";
 import {
+  clearActiveTrigger,
   hasClaimedSceneItem,
   isRescueWindowOpen,
   normalizeInitialState,
@@ -186,16 +187,19 @@ export class CampaignManager {
       case "@SESSION_END":
         return action.payload.trim().length > 0;
 
-      case "@PLOT_UPDATE":
-        return (
-          action.payload.trim().length > 0 &&
-          !this.state.plotProgress.includes(action.payload.trim()) &&
-          isPlotUpdateAllowed(
-            this.modulePlotData,
-            this.state.plotProgress,
-            action.payload.trim(),
-          )
-        );
+      case "@PLOT_UPDATE": {
+        const plotNodeId = action.payload.trim();
+        if (!plotNodeId) return false;
+        if (this.state.plotProgress.includes(plotNodeId)) return false;
+        const activeTriggerForPlot = this.state.triggerRuntime?.activeTrigger;
+        if (activeTriggerForPlot) {
+          const allowedPlotNodes = activeTriggerForPlot.deployable.plotNodeIds || [];
+          if (allowedPlotNodes.length > 0 && !allowedPlotNodes.includes(plotNodeId)) {
+            return false;
+          }
+        }
+        return isPlotUpdateAllowed(this.modulePlotData, this.state.plotProgress, plotNodeId);
+      }
 
       case "@VAR_UPDATE":
         return isValidVariableUpdate(action.payload);
@@ -209,6 +213,16 @@ export class CampaignManager {
         if (!itemName) return false;
         if (hasClaimedSceneItem(this.state, itemName)) {
           return false;
+        }
+        const activeTriggerForItem = this.state.triggerRuntime?.activeTrigger;
+        if (activeTriggerForItem) {
+          const triggerItemIds = activeTriggerForItem.deployable.itemIds || [];
+          if (triggerItemIds.length > 0) {
+            return triggerItemIds.some(
+              (allowed) => allowed.toLowerCase() === itemName.toLowerCase(),
+            );
+          }
+          // trigger exists but doesn't restrict items → fall through to scene whitelist
         }
         const currentLocation = this.getCurrentLocationData();
         const allowedItems =
@@ -250,8 +264,13 @@ export class CampaignManager {
     });
 
     if (action.type === "@COMBAT_START" && this.state.triggerRuntime?.activeTrigger) {
-      this.state.triggerRuntime.activeTrigger = null;
+      clearActiveTrigger(this.state);
       console.log("[Campaign] 触发器已消费，activeTrigger 清除");
+    }
+
+    if (action.type === "@MOVE" && this.state.triggerRuntime?.activeTrigger) {
+      clearActiveTrigger(this.state);
+      console.log("[Campaign] 场景切换，activeTrigger 清除");
     }
 
     return events;

@@ -3,6 +3,8 @@
 这份文档定义 AutoDM 接下来的修改方向。目标不是把它继续堆成一个“会讲故事的网页 Demo”，而是把它收敛成一个可扩展、可验证、可承载单人/多人跑团的 TRPG engine。
 
 配套的“严格剧本边界”设计与分阶段落地计划见 `docs/architecture/strict_story_boundary_design.md`。
+当前原型状态与缺口见 `docs/architecture/strict_story_boundary_status.md`。
+当前模组 `eldora_shadow` 的剧情契约审计见 `docs/architecture/eldora_shadow_contract_audit.md`。
 
 ## 1. 目标
 

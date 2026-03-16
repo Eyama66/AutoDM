@@ -111,6 +111,12 @@ export function markSceneItemClaimed(
   ];
 }
 
+export function clearActiveTrigger(state: EngineState): void {
+  if (state.triggerRuntime?.activeTrigger) {
+    state.triggerRuntime.activeTrigger = null;
+  }
+}
+
 export function getConnectivityMap(currentAreaData: any): Record<string, string[]> {
   const map: Record<string, string[]> = {};
   if (currentAreaData && currentAreaData.locations) {

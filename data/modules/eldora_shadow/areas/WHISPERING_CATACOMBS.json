@@ -9,7 +9,7 @@
       "description": "长廊两侧整齐地排列着石龛，里面盛放着枯萎的遗骸。空气中回荡着细碎的私语声，仿佛墙壁本身正在诉说着古老的诅咒。",
       "connections": ["THORN_VILLAGE:E03", "C02"],
       "encounters": ["fallen_guard_alert", "fallen_guard_ambush"],
-      "dmNotes": "这里是战斗的第一个爆发点。阴影中潜伏着两名堕落卫兵。感知检定（DC 12）决定分支：成功则玩家先手，失败则被偷袭。触发器见 triggers 字段。",
+      "dmNotes": "这里是战斗的第一个爆发点。阴影中潜伏着两名堕落卫兵。感知检定（DC 12）决定分支：成功则玩家先手，失败则被偷袭；随后根据结果触发 [@COMBAT_START(fallen_guard_alert)] 或 [@COMBAT_START(fallen_guard_ambush)]。触发器见 triggers 字段。",
       "triggers": [
         {
           "id": "TRIG_C01_PATROL_AWARENESS",
@@ -40,6 +40,7 @@
       "connections": ["C01", "CRIMSON_SANCTUM:S01"],
       "encounters": ["shadow_spirit"],
       "actions": ["@CHECK(宗教:12)", "@CHECK(奥法:14)"],
+      "dmNotes": "若玩家与游荡的幽灵完成关键互动，并明确作出超度或利用它的选择，可推进 [@PLOT_UPDATE(PP003)]。",
       "npcs": [
         {
           "name": "游荡的幽灵",
@@ -48,5 +49,5 @@
       ]
     }
   ],
-  "dmInstructions": "地窟中的光线极差，强调‘低语’的听觉描写。AI 应在 C01 触发 [@COMBAT_START(fallen_guard,fallen_guard)]。"
+  "dmInstructions": "地窟中的光线极差，强调‘低语’的听觉描写。进入 C01 时应强化被注视与潜伏者逼近的感觉，进入 C02 时应把注意力拉向祭坛裂缝与幽灵的哀悼。"
 }

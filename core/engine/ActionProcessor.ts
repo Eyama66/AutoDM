@@ -20,6 +20,25 @@ export type ActionType =
   | "@SESSION_END" // 本局结束：[@SESSION_END(Reason)]
   | "@NARRATE"; // 纯叙事 (隐式默认)
 
+export const SUPPORTED_ACTION_TYPES: readonly ActionType[] = [
+  "@MOVE",
+  "@PLOT_UPDATE",
+  "@ATTR_UPDATE",
+  "@ITEM_ADD",
+  "@INIT_COMBAT",
+  "@COMBAT_START",
+  "@ATTACK",
+  "@COMBAT_END",
+  "@VAR_UPDATE",
+  "@STATUS_ADD",
+  "@STATUS_REMOVE",
+  "@CHECK",
+  "@CHECK_SET",
+  "@ROLL",
+  "@SESSION_END",
+  "@NARRATE",
+];
+
 export interface ParsedAction {
   type: ActionType;
   payload: string;

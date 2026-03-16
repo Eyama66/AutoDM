@@ -392,4 +392,127 @@ function testCampaignIntegration() {
   console.log("🏁 战役管理逻辑验证完毕：全线通过。");
 }
 
+/**
+ * 回归测试：trigger 生命周期 — 场景切换时 activeTrigger 必须清除
+ */
+function testTriggerLifecycle() {
+  console.log("\n🚀 开始验证 Trigger 生命周期...");
+
+  const character = structuredClone(DEFAULT_CHARACTER);
+  character.hp.current = 20;
+  character.hp.max = 20;
+
+  const initialState: GameState = {
+    currentModule: "TEST_MODULE",
+    currentAreaId: "DUNGEON",
+    currentLocationId: "C01",
+    characterSheet: character,
+    party: [character],
+    plotProgress: [],
+    activeQuestIds: [],
+    isCombatActive: false,
+    variables: {},
+    sessionMode: "solo",
+    phase: "exploration",
+  };
+
+  const areaData = {
+    areaId: "DUNGEON",
+    locations: [
+      {
+        id: "C01",
+        name: "长廊",
+        connections: ["C02"],
+        encounters: ["guard_alert", "guard_ambush"],
+        triggers: [
+          {
+            id: "TRIG_C01_AWARENESS",
+            when: "check_resolved",
+            skill: "感知",
+            dc: 12,
+            branches: {
+              success: {
+                narrativeHint: "先手",
+                deployable: { encounterIds: ["guard_alert"] },
+              },
+              failure: {
+                narrativeHint: "偷袭",
+                deployable: { encounterIds: ["guard_ambush"] },
+              },
+            },
+          },
+        ],
+      },
+      {
+        id: "C02",
+        name: "祭坛",
+        connections: ["C01"],
+        encounters: ["shadow_spirit"],
+      },
+    ],
+  };
+
+  const moduleAuthority = compileModuleAuthority([areaData]);
+  const camp = new CampaignManager(initialState);
+  camp.setModuleAuthority(moduleAuthority);
+  camp.initialize({ name: "测试", globalVariables: {} }, areaData, null);
+  camp.setMonsterLibrary([
+    { id: "guard_alert", name: "卫兵（警觉）" },
+    { id: "guard_ambush", name: "卫兵（偷袭）" },
+    { id: "shadow_spirit", name: "幽灵" },
+  ]);
+
+  // 1. 检定成功 → activeTrigger 激活，只允许 guard_alert
+  camp.applyCheckResult({ skill: "感知", dc: 12, isSuccess: true });
+  const stateAfterCheck = camp.getState();
+  if (stateAfterCheck.triggerRuntime?.activeTrigger?.triggerId !== "TRIG_C01_AWARENESS") {
+    throw new Error("❌ Trigger 激活测试失败：applyCheckResult 后 activeTrigger 应被写入");
+  }
+  if (stateAfterCheck.triggerRuntime?.activeTrigger?.branch !== "success") {
+    throw new Error("❌ Trigger 分支测试失败：应为 success 分支");
+  }
+  console.log("✅ Trigger 激活测试成功：检定后 activeTrigger 写入正确。");
+
+  // 2. trigger 激活时，guard_ambush 应被阻止
+  const ambushResult = camp.processAiResponse("[@COMBAT_START(guard_ambush)]");
+  if (ambushResult.validatedActions.some((a) => a.type === "@COMBAT_START")) {
+    throw new Error("❌ Trigger 收窄测试失败：激活 trigger 后不应允许非 success 分支的 encounter");
+  }
+  console.log("✅ Trigger 收窄测试成功：非 trigger 分支 encounter 被拦截。");
+
+  // 3. @MOVE 后 activeTrigger 必须清除
+  camp.processAiResponse("[@MOVE(C02)]");
+  const stateAfterMove = camp.getState();
+  if (stateAfterMove.currentLocationId !== "C02") {
+    throw new Error("❌ 移动测试失败：应已移动至 C02");
+  }
+  if (stateAfterMove.triggerRuntime?.activeTrigger !== null) {
+    throw new Error("❌ Trigger 清除测试失败：@MOVE 后 activeTrigger 应为 null，但仍有值");
+  }
+  console.log("✅ Trigger 清除测试成功：@MOVE 后 activeTrigger 已清除。");
+
+  // 4. 移动后 C02 的 possibilitySpace 不被旧 trigger 污染（shadow_spirit 应可触发）
+  const shadowResult = camp.processAiResponse("[@COMBAT_START(shadow_spirit)]");
+  if (!shadowResult.validatedActions.some((a) => a.type === "@COMBAT_START")) {
+    throw new Error("❌ 跨场景污染测试失败：移动后 C02 的合法 encounter 应可触发");
+  }
+  console.log("✅ 跨场景污染测试成功：移动后新场景 possibilitySpace 不受旧 trigger 污染。");
+
+  // 5. @COMBAT_START 落地后 activeTrigger 也应清除（重置场景，回 C01 再验证）
+  camp.processAiResponse("[@COMBAT_END]");
+  camp.processAiResponse("[@MOVE(C01)]");
+  camp.applyCheckResult({ skill: "感知", dc: 12, isSuccess: false });
+  if (!camp.getState().triggerRuntime?.activeTrigger) {
+    throw new Error("❌ Trigger 重激活测试失败：回到 C01 后检定失败应重新激活 trigger");
+  }
+  camp.processAiResponse("[@COMBAT_START(guard_ambush)]");
+  if (camp.getState().triggerRuntime?.activeTrigger !== null) {
+    throw new Error("❌ Trigger 消费测试失败：@COMBAT_START 落地后 activeTrigger 应为 null");
+  }
+  console.log("✅ Trigger 消费测试成功：@COMBAT_START 落地后 activeTrigger 已清除。");
+
+  console.log("🏁 Trigger 生命周期验证完毕：全线通过。");
+}
+
 testCampaignIntegration();
+testTriggerLifecycle();

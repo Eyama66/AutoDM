@@ -14,6 +14,8 @@ AutoDM is treated as a long-term **TRPG engine**, not just a web demo. The desig
 - long sessions with recoverable state
 
 The Chinese version is `docs/architecture/strict_story_boundary_design.md`.
+Current prototype status is tracked in `docs/architecture/strict_story_boundary_status.md`.
+The current `eldora_shadow` module contract audit is in `docs/architecture/eldora_shadow_contract_audit.md`.
 
 ---
 

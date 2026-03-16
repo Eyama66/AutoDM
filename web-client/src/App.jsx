@@ -351,6 +351,7 @@ const App = () => {
     }
 
     const outcomes = checksToResolve.map((check) => resolveCheckOutcome(character, check))
+    outcomes.forEach((outcome) => campaign.applyCheckResult(outcome))
     const hiddenPrompt = buildSystemCheckSetResultPrompt(checkSet, outcomes, trimmedContext)
     const displayLabel =
       checkSet.mode === 'choose_one'

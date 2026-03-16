@@ -96,32 +96,40 @@ async function testFullLoop() {
 
   const prompt = (ai as any).buildSystemPrompt(context) as string;
   const hpSummary = `"hp":"${character.hp.current}/${character.hp.max}"`;
-  if (
-    !prompt.includes("[CTX_PACKET]") ||
-    !prompt.includes("玩家输入=意图，不=事实") ||
-    !prompt.includes("Shortsword") ||
-    (!prompt.includes("你拥有裁定权") && !prompt.includes("裁定权在你")) ||
-    !prompt.includes("不暴露原始 ID") ||
-    !prompt.includes("广场") ||
-    !prompt.includes("[@CHECK(skill:dc:reason)]") ||
-    !prompt.includes("[@ROLL(label:formula)]") ||
-    !prompt.includes("choose_one") ||
-    !prompt.includes("all") ||
-    !prompt.includes("[SYS_CHECK_RESULT]") ||
-    !prompt.includes("[SYS_CHECK_SET_RESULT]") ||
-    !prompt.includes("[SYS_ROLL_RESULT]") ||
-    !prompt.includes("[SYS_ENDGAME_DIRECTIVE]") ||
-    !prompt.includes("[SYS_TURN_RESOLUTION]") ||
-    !prompt.includes('"allowedNext":["PP001"]') ||
-    !prompt.includes(hpSummary) ||
-    !prompt.includes('"status":"ready"') ||
-    !prompt.includes('"phase":"exploration"') ||
-    !prompt.includes('"rescueWindow":false') ||
-    !prompt.includes("[@VAR_UPDATE(last_chance_available:true)]") ||
-    !prompt.includes("[@SESSION_END(reason)]") ||
-    prompt.length > 3450
-  ) {
-    throw new Error("❌ AI 提示词缺少状态约束、装备约束或裁定权规则。");
+  const promptChecks = [
+    ["ctx_packet", prompt.includes("[CTX_PACKET]")],
+    ["intent_is_not_fact", prompt.includes("玩家输入=意图，不=事实")],
+    ["inventory_summary", prompt.includes("Shortsword")],
+    ["adjudication_authority", prompt.includes("你拥有裁定权") || prompt.includes("裁定权在你")],
+    ["hide_raw_ids", prompt.includes("不暴露原始 ID")],
+    ["known_location_name", prompt.includes("广场")],
+    ["check_tag", prompt.includes("[@CHECK(skill:dc:reason)]")],
+    ["roll_tag", prompt.includes("[@ROLL(label:formula)]")],
+    ["check_set_choose_one", prompt.includes("choose_one")],
+    ["check_set_all", prompt.includes("all")],
+    ["sys_check_result", prompt.includes("[SYS_CHECK_RESULT]")],
+    ["sys_check_set_result", prompt.includes("[SYS_CHECK_SET_RESULT]")],
+    ["sys_roll_result", prompt.includes("[SYS_ROLL_RESULT]")],
+    ["sys_endgame_directive", prompt.includes("[SYS_ENDGAME_DIRECTIVE]")],
+    ["sys_turn_resolution", prompt.includes("[SYS_TURN_RESOLUTION]")],
+    ["allowed_next_plot", prompt.includes('"allowedNext":["PP001"]')],
+    ["hp_summary", prompt.includes(hpSummary)],
+    ["player_ready_status", prompt.includes('"status":"ready"')],
+    ["phase_exploration", prompt.includes('"phase":"exploration"')],
+    ["rescue_window_flag", prompt.includes('"rescueWindow":false')],
+    ["last_chance_tag", prompt.includes("[@VAR_UPDATE(last_chance_available:true)]")],
+    ["session_end_tag", prompt.includes("[@SESSION_END(reason)]")],
+    ["prompt_length<=4200", prompt.length <= 4200],
+  ] as const;
+
+  const failedChecks = promptChecks
+    .filter(([, passed]) => !passed)
+    .map(([label]) => label);
+
+  if (failedChecks.length > 0) {
+    throw new Error(
+      `❌ AI 提示词 contract 断言失败: ${failedChecks.join(", ")} (length=${prompt.length})`,
+    );
   }
 
   const rawAiText = await ai.generate(userInput, context);

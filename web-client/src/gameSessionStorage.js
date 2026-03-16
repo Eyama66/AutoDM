@@ -84,6 +84,9 @@ export function buildInitialSession() {
         defaultState.sceneRuntime?.claimedItemsBySceneId ||
         {},
     },
+    triggerRuntime: {
+      activeTrigger: null,
+    },
   }
 
   if (mergedState.sessionMode === 'solo') {

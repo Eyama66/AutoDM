@@ -16,6 +16,9 @@
 它**不假定世界规模总是更小**，也不把“先做轻量版、以后再说”当作核心前提。
 
 英文版见 `docs/architecture/strict_story_boundary_design.en.md`。
+当前原型状态与已知缺口见 `docs/architecture/strict_story_boundary_status.md`。
+实施路线图见 `docs/architecture/engine_roadmap.md`。
+当前模组 `eldora_shadow` 的剧情契约审计见 `docs/architecture/eldora_shadow_contract_audit.md`。
 
 ---
 
@@ -175,9 +178,9 @@ AutoDM 目前已经有一个较好的基础：
 但仍存在几个关键缺口：
 
 1. **事件触发缺乏条件分支**
-   - trigger prototype 已接入，但目前仍主要覆盖 `check_resolved -> combat narrowing`
-   - `plot / item` 还没有完整进入同一套 trigger-aware runtime guard
-   - `CHECK_SET`、离场清理、持久化恢复等生命周期仍未闭环
+   - trigger prototype 已接入，并已覆盖 `check_resolved -> combat / plot / item narrowing`
+   - 当前主要缺口不再是“能不能激活 trigger”，而是 trigger 生命周期与更多 `when` 类型还未完整扩展
+   - 尤其是跨刷新恢复、更多触发源和更复杂场景约束，还没有形成完整 runtime contract
 
 2. **AI 角色定位偏差**
    - 当前前端战术实现仍偏 `narrator`
@@ -189,8 +192,8 @@ AutoDM 目前已经有一个较好的基础：
    - 但 `possibilitySpace` 目前仍主要服务于 encounter / item / plot proposal 约束
    - 它还不是 blocker/result-predicate 级别的完整开放裁判上下文
 
-4. **重试循环上下文残缺**
-   - 这个问题在当前原型里已修复
+4. **文本事实校验仍部分依赖启发式**
+   - 重试上下文问题在当前原型里已修复
    - 当前剩余问题不是“看不到坏回复”，而是 validator 本身仍有部分启发式文本判断
 
 5. **上下文组装还不够分层**
@@ -909,58 +912,23 @@ AI 的职责则是：
 
 ---
 
-## 9. 当前原型状态与下一步
+## 9. 当前状态与实施进度
 
-### 9.1 当前已完成的关键能力
+这份文档只保留：
 
-- ✅ `campaignAuthority.ts`
-  - Scene / NPC / item / encounter / trigger 数据已能在加载时编译
-- ✅ `campaignPlotUtils.ts`
-  - PlotFrontier 已能计算前置条件与 allowed next nodes
-- ✅ `AIEngine.generateStrictResponse()`
-  - 重试纠错时已带上上一条坏回复
-- ✅ `possibilitySpace`
-  - 已进入 `AuthorityPacket` / `CTX_PACKET`
-  - prompt 已显式要求 `@COMBAT_START / @ITEM_ADD / @PLOT_UPDATE` 优先服从它
-- ✅ `NarrativeBoundaryValidator.ts`
-  - combat / item / plot 已优先对照 `possibilitySpace`
-  - `ENC_` 模板别名绕过已移除
-- ✅ trigger prototype
-  - `SceneTrigger` 数据已能编译
-  - `CampaignManager.applyCheckResult()` 已能激活 `activeTrigger`
-  - `buildPromptContext()` 已能读取 `activeTrigger` 收窄 `possibilitySpace`
+- 长期设计目标
+- 核心原则
+- 目标架构
+- 关键数据模型
 
-### 9.2 当前已经验证的设计方向
+为了避免把“设计原则”“当前实现状态”“近期 backlog”全部塞进一份大文档，当前原型状态和剩余缺口已拆到：
 
-当前原型已经能证明下面这条方向成立：
+- `docs/architecture/strict_story_boundary_status.md`
 
-- 系统可以在关键检定分支点收窄 AI 的合法部署空间
-- AI 不再只看 scene 原始白名单，而是看“此刻被允许的部署范围”
-- 这让“系统约束关键事件，AI 裁量何时以及如何触发”开始可运行
+相关配套文档：
 
-换句话说，当前已经从：
-
-- “AI 会讲故事，动作有一些硬校验，但 AI 不知道自己现在能做什么”
-
-走到：
-
-- “AI 至少在部分关键分支上，已经知道自己此刻能合法部署什么”
-
-### 9.3 当前仍未完全闭环的点
-
-当前原型还不是完整的正式 runtime，主要差距在：
-
-1. `plot / item` 的 runtime guard 还未完整对照 trigger-narrowed `possibilitySpace`
-2. `CHECK_SET` 流程还未统一接入 trigger 激活
-3. `activeTrigger` 的清理、持久化、恢复链路还不完整
-4. 文本级 `location drift` 仍带启发式成分，不应作为长期主约束
-
-### 9.4 当前评估结论
-
-- **如果目标是前端 prototype**
-  - 当前实现已经足够验证“关键事件触发靠系统约束，故事叙事与部分裁量交给 AI”的方向
-- **如果目标是严格、可恢复、可扩展的正式 runtime**
-  - 还需要补齐 blocker / resolved condition、trigger 生命周期、runtime guard 闭环与后端 authoritative runtime
+- 长期实施路线图：`docs/architecture/engine_roadmap.md`
+- 当前项目落地概览：`docs/architecture/project_summary.md`
 
 ---
 
