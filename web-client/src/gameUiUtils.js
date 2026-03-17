@@ -15,6 +15,7 @@ export { buildSessionUiState } from './gameUi/sessionUiState'
 export {
   buildEngineActionTags,
   buildSceneIntentOptions,
+  inferTurnIntentFromPlayerInput,
   buildSystemTurnResolutionPrompt,
   resolveTurnIntent,
   serializeEngineActions,

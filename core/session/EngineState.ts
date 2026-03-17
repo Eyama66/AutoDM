@@ -50,6 +50,18 @@ export interface TriggerRuntimeState {
   activeTrigger: ActiveTriggerState | null;
 }
 
+export interface ResolvedCheckScope {
+  sceneId: string;
+  skill: string;
+  dc: number;
+  reasonKey?: string;
+  intentKey?: string;
+}
+
+export interface ResolutionRuntimeState {
+  resolvedChecks: ResolvedCheckScope[];
+}
+
 /**
  * EngineState 是 AutoDM 未来的权威状态快照。
  * 现阶段保留 legacy 字段以兼容当前单人浏览器版本。
@@ -70,6 +82,7 @@ export interface EngineState {
   combat?: CombatState;
   sceneRuntime?: SceneRuntimeState;
   triggerRuntime?: TriggerRuntimeState;
+  resolutionRuntime?: ResolutionRuntimeState;
 }
 
 export type GameState = EngineState;

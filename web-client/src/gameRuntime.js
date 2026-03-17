@@ -1,5 +1,6 @@
 import { CampaignManager } from '@core/engine/CampaignManager'
 import { AIEngine } from '@core/ai/AIEngine'
+import { setTraceEnabled, summarizeStateForTrace, trace } from '@core/debug/traceLogger'
 import {
   modulePlotData,
   moduleAuthority,
@@ -20,6 +21,11 @@ export const aiEngine = new AIEngine({
 })
 
 export const initialSession = buildInitialSession()
+const traceEnabled =
+  typeof import.meta.env.VITE_AUTODM_TRACE === 'string'
+    ? import.meta.env.VITE_AUTODM_TRACE !== 'false'
+    : import.meta.env.DEV === true
+setTraceEnabled(traceEnabled)
 
 export const campaign = new CampaignManager(initialSession.gameState)
 
@@ -30,6 +36,12 @@ campaign.setCallbacks((areaId) => {
   campaign.initialize(manifest, getAreaById(areaId), modulePlotData)
 })
 campaign.initialize(manifest, getAreaById(initialSession.gameState.currentAreaId), modulePlotData)
+
+trace('runtime', 'initialized game runtime', {
+  moduleId: manifest.moduleId || manifest.name,
+  traceEnabled,
+  initialState: summarizeStateForTrace(initialSession.gameState),
+})
 
 export {
   buildDefaultGameState,

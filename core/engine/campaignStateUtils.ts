@@ -1,5 +1,8 @@
 import { CharacterManager } from "./CharacterManager.js";
-import type { EngineState } from "../session/EngineState.js";
+import type {
+  EngineState,
+  ResolvedCheckScope,
+} from "../session/EngineState.js";
 
 export function normalizeInitialState(initialState: EngineState): EngineState {
   const party =
@@ -30,6 +33,14 @@ export function normalizeInitialState(initialState: EngineState): EngineState {
     sceneRuntime: {
       claimedItemsBySceneId:
         initialState.sceneRuntime?.claimedItemsBySceneId || {},
+    },
+    triggerRuntime: {
+      activeTrigger: initialState.triggerRuntime?.activeTrigger || null,
+    },
+    resolutionRuntime: {
+      resolvedChecks: Array.isArray(initialState.resolutionRuntime?.resolvedChecks)
+        ? initialState.resolutionRuntime?.resolvedChecks
+        : [],
     },
     variables: {
       last_chance_available: false,
@@ -115,6 +126,99 @@ export function clearActiveTrigger(state: EngineState): void {
   if (state.triggerRuntime?.activeTrigger) {
     state.triggerRuntime.activeTrigger = null;
   }
+}
+
+function normalizeScopeText(value: string): string {
+  return String(value || "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+export function buildResolvedCheckScope(
+  state: EngineState,
+  input: {
+    skill: string;
+    dc: number;
+    reason?: string | undefined;
+    intent?: string | undefined;
+  },
+): ResolvedCheckScope {
+  return {
+    sceneId: getCurrentSceneId(state),
+    skill: normalizeScopeText(input.skill),
+    dc: Number(input.dc),
+    reasonKey: normalizeScopeText(input.reason || ""),
+    intentKey: normalizeScopeText(input.intent || ""),
+  };
+}
+
+export function getResolvedCheckScopes(state: EngineState): ResolvedCheckScope[] {
+  return state.resolutionRuntime?.resolvedChecks || [];
+}
+
+export function hasResolvedCheckScope(
+  state: EngineState,
+  candidate: ResolvedCheckScope,
+  options?: { allowSkillDcFallback?: boolean },
+): boolean {
+  const candidateReason = normalizeScopeText(candidate.reasonKey || "");
+  const candidateIntent = normalizeScopeText(candidate.intentKey || "");
+
+  return getResolvedCheckScopes(state).some((entry) => {
+    if (
+      entry.sceneId !== candidate.sceneId ||
+      normalizeScopeText(entry.skill) !== candidate.skill ||
+      Number(entry.dc) !== Number(candidate.dc)
+    ) {
+      return false;
+    }
+
+    const entryReason = normalizeScopeText(entry.reasonKey || "");
+    const entryIntent = normalizeScopeText(entry.intentKey || "");
+
+    if (candidateReason && entryReason && candidateReason === entryReason) {
+      return true;
+    }
+
+    if (candidateIntent && entryIntent && candidateIntent === entryIntent) {
+      return true;
+    }
+
+    if (options?.allowSkillDcFallback) {
+      return true;
+    }
+
+    return false;
+  });
+}
+
+export function markResolvedCheckScope(
+  state: EngineState,
+  candidate: ResolvedCheckScope,
+): void {
+  if (!state.resolutionRuntime) {
+    state.resolutionRuntime = { resolvedChecks: [] };
+  }
+
+  if (
+    hasResolvedCheckScope(state, candidate, {
+      allowSkillDcFallback: false,
+    })
+  ) {
+    return;
+  }
+
+  state.resolutionRuntime.resolvedChecks = [
+    ...getResolvedCheckScopes(state),
+    candidate,
+  ];
+}
+
+export function clearResolvedCheckScopes(state: EngineState): void {
+  if (!state.resolutionRuntime) {
+    state.resolutionRuntime = { resolvedChecks: [] };
+    return;
+  }
+
+  state.resolutionRuntime.resolvedChecks = [];
 }
 
 export function getConnectivityMap(currentAreaData: any): Record<string, string[]> {

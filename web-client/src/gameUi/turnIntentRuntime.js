@@ -1,3 +1,6 @@
+import { ActionProcessor } from '@core/engine/ActionProcessor'
+import { parseCheckPayload, parseCheckSetPayload } from '@core/engine/campaignPayloadUtils'
+
 function normalizeText(value) {
   return String(value || '').trim()
 }
@@ -8,6 +11,134 @@ function normalizeInlineText(value) {
 
 function buildOptionId(type, targetId) {
   return `${type}:${targetId || 'none'}`
+}
+
+const MOVE_CUE_REGEX = /(前往|往|去|走向|走去|走到|进入|进到|钻进|爬进|潜入|回到|返回|穿过|通过|前进|深入|下去)/
+
+function uniqueValues(values) {
+  return [...new Set((values || []).filter(Boolean))]
+}
+
+function buildNameAliases(name) {
+  const normalized = normalizeInlineText(name)
+  if (!normalized) {
+    return []
+  }
+
+  const aliases = new Set([normalized])
+  if (normalized.includes('的')) {
+    aliases.add(normalizeInlineText(normalized.split('的').slice(-1)[0]))
+  }
+
+  if (normalized.length >= 2) {
+    aliases.add(normalized.slice(0, 2))
+    aliases.add(normalized.slice(-2))
+  }
+
+  if (normalized.length >= 3) {
+    aliases.add(normalized.slice(0, 3))
+    aliases.add(normalized.slice(-3))
+  }
+
+  if (normalized.length >= 4) {
+    aliases.add(normalized.slice(-4))
+  }
+
+  return uniqueValues([...aliases].filter((alias) => alias.length >= 2))
+}
+
+function parseAllowedSceneChecks(actions) {
+  const actionTags = Array.isArray(actions) ? actions : []
+  return actionTags.flatMap((actionTag) => {
+    const normalizedTag = normalizeText(actionTag)
+    if (!normalizedTag) {
+      return []
+    }
+
+    const parsedActions = ActionProcessor.parse(
+      normalizedTag.startsWith('[') ? normalizedTag : `[${normalizedTag}]`,
+    )
+
+    return parsedActions.flatMap((action) => {
+      if (action.type === '@CHECK') {
+        const parsed = parseCheckPayload(action.payload)
+        return parsed ? [parsed] : []
+      }
+
+      if (action.type === '@CHECK_SET') {
+        const parsed = parseCheckSetPayload(action.payload)
+        return parsed?.checks || []
+      }
+
+      return []
+    })
+  })
+}
+
+function pickExitMatch(input, exits) {
+  const normalizedInput = normalizeInlineText(input)
+  if (!normalizedInput || !MOVE_CUE_REGEX.test(normalizedInput)) {
+    return null
+  }
+
+  const matches = exits
+    .map((exit) => {
+      const aliases = buildNameAliases(exit?.name)
+      const bestAlias = aliases
+        .filter((alias) => normalizedInput.includes(alias))
+        .sort((left, right) => right.length - left.length)[0]
+
+      if (!bestAlias) {
+        return null
+      }
+
+      return {
+        exit,
+        score: bestAlias.length + (normalizeInlineText(exit?.name) === bestAlias ? 5 : 0),
+      }
+    })
+    .filter(Boolean)
+    .sort((left, right) => right.score - left.score)
+
+  if (matches.length === 0) {
+    return null
+  }
+
+  if (matches.length > 1 && matches[0].score === matches[1].score) {
+    return null
+  }
+
+  return matches[0].exit
+}
+
+function splitIntentClauses(input) {
+  return uniqueValues(
+    String(input || '')
+      .split(/(?:，|。|！|\!|？|\?|；|;|然后|再|接着|随后|之后)/)
+      .map((part) => normalizeInlineText(part))
+      .filter(Boolean),
+  )
+}
+
+function inferTraversalCheck(input, context) {
+  const normalizedInput = normalizeInlineText(input)
+  if (!normalizedInput || !MOVE_CUE_REGEX.test(normalizedInput)) {
+    return null
+  }
+
+  const dmNotes = normalizeInlineText(context?.currentLocationDmNotes)
+  const traversalMoveTags = ActionProcessor.parse(dmNotes)
+    .filter((action) => action.type === '@MOVE')
+  if (traversalMoveTags.length === 0) {
+    return null
+  }
+
+  const allowedChecks = parseAllowedSceneChecks(context?.currentLocationActions)
+  if (allowedChecks.length !== 1) {
+    return null
+  }
+
+  return allowedChecks[0]
 }
 
 export function buildEngineActionTags(actions) {
@@ -96,6 +227,50 @@ export function buildSceneIntentOptions(context) {
   return options
 }
 
+export function inferTurnIntentFromPlayerInput(playerInput, context) {
+  const normalizedInput = normalizeInlineText(playerInput)
+  if (!normalizedInput) {
+    return null
+  }
+
+  const candidates = uniqueValues([
+    ...splitIntentClauses(normalizedInput).reverse(),
+    normalizedInput,
+  ])
+  const exits = Array.isArray(context?.availableExitOptions) ? context.availableExitOptions : []
+  for (const candidate of candidates) {
+    const matchedExit = pickExitMatch(candidate, exits)
+    if (matchedExit) {
+      return {
+        id: buildOptionId('move', matchedExit.id),
+        type: 'move',
+        label: `前往 ${matchedExit.name}`,
+        targetId: matchedExit.id,
+        targetLabel: matchedExit.name,
+        playerPrompt: playerInput,
+      }
+    }
+
+    const traversalCheck = inferTraversalCheck(candidate, context)
+    if (traversalCheck) {
+      return {
+        id: buildOptionId(
+          'scene_check',
+          `${normalizeText(context?.currentLocationName)}:${traversalCheck.skill}:${traversalCheck.dc}`,
+        ),
+        type: 'scene_check',
+        label: `尝试通过 ${normalizeText(context?.currentLocationName) || '当前场景'}`,
+        targetId: normalizeText(context?.currentLocationName),
+        targetLabel: normalizeText(context?.currentLocationName),
+        playerPrompt: playerInput,
+        pendingCheck: traversalCheck,
+      }
+    }
+  }
+
+  return null
+}
+
 export function resolveTurnIntent(intent, context) {
   const intentType = normalizeText(intent?.type)
   const targetId = normalizeText(intent?.targetId)
@@ -103,6 +278,8 @@ export function resolveTurnIntent(intent, context) {
   switch (intentType) {
     case 'move':
       return resolveMoveIntent(intent, context, targetId)
+    case 'scene_check':
+      return resolveSceneCheckIntent(intent, context)
     case 'talk':
       return resolveTalkIntent(intent, context, targetId)
     case 'loot':
@@ -142,6 +319,7 @@ export function stripResolvedActionTags(text, resolvedActionTags) {
 }
 
 export function buildSystemTurnResolutionPrompt(intent, resolution, context) {
+  const isPendingCheckResolution = normalizeInlineText(resolution?.status) === 'requires_check'
   const lines = [
     '[SYS_TURN_RESOLUTION]',
     `intent_type=${normalizeInlineText(intent?.type) || 'unknown'}`,
@@ -149,7 +327,11 @@ export function buildSystemTurnResolutionPrompt(intent, resolution, context) {
     `summary=${normalizeInlineText(resolution?.summary) || '需要根据当前场景继续裁定。'}`,
     `player_intent=${normalizeInlineText(resolution?.playerPrompt || intent?.playerPrompt || intent?.label)}`,
     `scene=${normalizeInlineText(context?.currentLocationName) || '未知地点'}`,
-    'instruction=这条玩家意图已经由本地运行时完成初步裁定。你只负责在世界内叙事，不要重新解释规则。除非新情境必须继续推进，否则不要输出新的[@ACTION]标签。',
+    `instruction=${
+      isPendingCheckResolution
+        ? '这条玩家意图已经由本地运行时裁定为一项既定检定。你只负责在世界内描写眼前的不确定性与风险，停在掷骰前的危机时刻；不要重新改判技能或 DC，也不要重复输出新的[@CHECK]标签。'
+        : '这条玩家意图已经由本地运行时完成初步裁定。你只负责在世界内叙事，不要重新解释规则。除非新情境必须继续推进，否则不要输出新的[@ACTION]标签。'
+    }`,
   ]
 
   const directives = Array.isArray(resolution?.narrativeDirectives)
@@ -191,6 +373,36 @@ function resolveMoveIntent(intent, context, targetId) {
     playerPrompt: intent.playerPrompt || `我前往${exit.name}。`,
     engineActions: [{ type: '@MOVE', payload: exit.id }],
     narrativeDirectives: ['acknowledge_player_intent', 'preserve_tension'],
+  }
+}
+
+function resolveSceneCheckIntent(intent, context) {
+  const pendingCheck = intent?.pendingCheck
+  const currentLocationName = normalizeText(context?.currentLocationName) || '当前场景'
+  if (!pendingCheck?.skill || !pendingCheck?.dc) {
+    return {
+      status: 'clarify',
+      summary: '玩家尝试继续深入，但当前场景没有明确的裁定路径。',
+      playerPrompt: intent.playerPrompt || intent.label || '我继续往前走。',
+      engineActions: [],
+      narrativeDirectives: ['acknowledge_player_intent', 'stay_in_scene'],
+    }
+  }
+
+  const reason =
+    normalizeText(pendingCheck.reason) || `穿过${currentLocationName}继续前进`
+
+  return {
+    status: 'requires_check',
+    summary: `玩家尝试穿过${currentLocationName}继续前进，必须先通过一次${pendingCheck.skill}检定。`,
+    playerPrompt: intent.playerPrompt || intent.label || `我继续穿过${currentLocationName}。`,
+    engineActions: [
+      {
+        type: '@CHECK',
+        payload: `${pendingCheck.skill}:${pendingCheck.dc}:${reason}`,
+      },
+    ],
+    narrativeDirectives: ['acknowledge_player_intent', 'stay_in_scene', 'preserve_tension'],
   }
 }
 

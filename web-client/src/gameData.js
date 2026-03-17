@@ -82,5 +82,11 @@ export function buildDefaultGameState(options = {}) {
     sceneRuntime: {
       claimedItemsBySceneId: {},
     },
+    triggerRuntime: {
+      activeTrigger: null,
+    },
+    resolutionRuntime: {
+      resolvedChecks: [],
+    },
   }
 }

@@ -73,7 +73,12 @@ function testCampaignIntegration() {
   const mockAreaData = {
     areaId: "THORN_VILLAGE",
     locations: [
-      { id: "E01", name: "大门", connections: ["E02"] },
+      {
+        id: "E01",
+        name: "大门",
+        connections: ["E02"],
+        actions: ["@CHECK(感知:14:观察门后动静)"],
+      },
       {
         id: "E02",
         name: "广场",
@@ -144,6 +149,35 @@ function testCampaignIntegration() {
   } else {
     throw new Error(`❌ 状态保存测试失败 ${JSON.stringify(finalState)}`);
   }
+
+  const rejectedCheckResult = camp.processAiResponse(
+    "你想硬掰开门闩。[@CHECK(力量:14:强行掰开门闩)]",
+  );
+  if (rejectedCheckResult.validatedActions.some((action) => action.type === "@CHECK")) {
+    throw new Error(`❌ 检定白名单测试失败：不应允许当前场景外的检定 ${JSON.stringify(rejectedCheckResult)}`);
+  }
+  console.log("✅ 检定白名单测试成功：scene.actions 之外的检定会被拦截。");
+
+  const allowedCheckResult = camp.processAiResponse(
+    "你侧耳听门后的动静。[@CHECK(感知:14:观察门后动静)]",
+  );
+  if (!allowedCheckResult.validatedActions.some((action) => action.type === "@CHECK")) {
+    throw new Error(`❌ 检定放行测试失败：scene.actions 中的检定应被允许 ${JSON.stringify(allowedCheckResult)}`);
+  }
+  camp.applyCheckResult({
+    skill: "感知",
+    dc: 14,
+    isSuccess: true,
+    reason: "观察门后动静",
+    intent: "过一个感知",
+  });
+  const duplicateCheckResult = camp.processAiResponse(
+    "你再次屏住呼吸去听门后。[@CHECK(感知:14:观察门后动静)]",
+  );
+  if (duplicateCheckResult.validatedActions.some((action) => action.type === "@CHECK")) {
+    throw new Error(`❌ 重复检定锁测试失败：同一场景同一检定不应重复发起 ${JSON.stringify(duplicateCheckResult)}`);
+  }
+  console.log("✅ 重复检定锁测试成功：已结算检定会阻止同场景重复发起。");
 
   const validMoveResponse = "你沿着破门进入广场。[@MOVE(E02)]";
   const validMoveResult = camp.processAiResponse(validMoveResponse);

@@ -1,4 +1,5 @@
 import { CharacterManager } from '@core/engine/CharacterManager'
+import { summarizeStateForTrace, trace } from '@core/debug/traceLogger'
 
 import {
   buildDefaultGameState,
@@ -39,6 +40,9 @@ export function buildInitialSession() {
   const persistedSession = loadPersistedSession()
 
   if (!persistedSession?.gameState) {
+    trace('session', 'no persisted session found; using default state', {
+      defaultState: summarizeStateForTrace(defaultState),
+    })
     return {
       gameState: defaultState,
       messages: [INITIAL_DM_MESSAGE],
@@ -134,6 +138,10 @@ export function persistSession(messages, gameState) {
     } catch {
       localStorage.setItem(SESSION_STORAGE_KEY, persistPayload(FALLBACK_PERSISTED_MESSAGES))
     }
+    trace('session', 'persisted session snapshot', {
+      messageCount: Array.isArray(messages) ? messages.length : 0,
+      state: summarizeStateForTrace(gameState),
+    })
   } catch (error) {
     console.warn('[App] 写入会话存档失败:', error)
   }

@@ -3,9 +3,14 @@ import type { GameState } from "../engine/CampaignManager.js";
 import { DEFAULT_CHARACTER } from "../engine/DefaultCharacter.js";
 import { AIEngine } from "./AIEngine.js";
 import type { PromptContext } from "./AIEngine.js";
+import { buildSystemPrompt as buildPromptSystemMessage } from "./promptBuilder.js";
 import type { KnownEngineEvent } from "../session/EngineEvent.js";
 import type { ModulePlotLike } from "../engine/campaignPlotUtils.js";
-import { validateNarrativeBoundaries } from "../validation/NarrativeBoundaryValidator.js";
+import { parseAIResponse } from "./AIResponseParser.js";
+import {
+  validateEnvelopeBoundaries,
+  validateNarrativeBoundaries,
+} from "../validation/NarrativeBoundaryValidator.js";
 
 /**
  * 全系统合龙测试：从玩家输入到逻辑校验的完整闭环
@@ -95,6 +100,7 @@ async function testFullLoop() {
   };
 
   const prompt = (ai as any).buildSystemPrompt(context) as string;
+  const jsonPrompt = buildPromptSystemMessage(context, "json_text");
   const hpSummary = `"hp":"${character.hp.current}/${character.hp.max}"`;
   const promptChecks = [
     ["ctx_packet", prompt.includes("[CTX_PACKET]")],
@@ -131,6 +137,20 @@ async function testFullLoop() {
       `❌ AI 提示词 contract 断言失败: ${failedChecks.join(", ")} (length=${prompt.length})`,
     );
   }
+  const jsonPromptChecks = [
+    ["json_object_contract", jsonPrompt.includes("输出协议：你的整条回复必须是一个 JSON object")],
+    ["json_action_rule", jsonPrompt.includes("动作标签只允许出现在 protocol.actionText 中")],
+    ["json_no_legacy_npc_tag", !jsonPrompt.includes("<<NPC:名字>>台词<</NPC>>")],
+  ] as const;
+  const failedJsonPromptChecks = jsonPromptChecks
+    .filter(([, passed]) => !passed)
+    .map(([label]) => label);
+  if (failedJsonPromptChecks.length > 0) {
+    throw new Error(
+      `❌ JSON 协议提示词 contract 断言失败: ${failedJsonPromptChecks.join(", ")}`,
+    );
+  }
+  console.log("✅ JSON 协议提示词测试成功：可切换到 envelope 输出 contract。");
 
   const rawAiText = await ai.generate(userInput, context);
   console.log(`[AI Raw]: ${rawAiText}`);
@@ -149,6 +169,57 @@ async function testFullLoop() {
     throw new Error("❌ Narrative validator 未能识别越界物品或非法剧情推进。");
   }
   console.log("✅ Narrative validator 动作测试成功：可识别越界物品与越界 plot 更新。");
+
+  const envelopeText = JSON.stringify({
+    narrative: {
+      segments: [
+        { type: "narration", content: "火把在潮湿的石壁上投下摇晃的影子。" },
+        { type: "dialogue", speaker: "看守员", content: "别靠太近。" },
+      ],
+    },
+    protocol: {
+      actionText: "[@MOVE(E02)]",
+    },
+  });
+  const parsedEnvelope = parseAIResponse(envelopeText);
+  if (parsedEnvelope.format !== "json") {
+    throw new Error("❌ JSON envelope 未被 parser 识别。");
+  }
+  if (parsedEnvelope.historyText !== "火把在潮湿的石壁上投下摇晃的影子。\n看守员：别靠太近。") {
+    throw new Error(`❌ historyText flatten 不符合预期: ${parsedEnvelope.historyText}`);
+  }
+  console.log("✅ Response parser 测试成功：JSON envelope 可被解析，historyText 会被展平。");
+
+  const invalidEnvelope = parseAIResponse(
+    JSON.stringify({
+      narrative: {
+        segments: [
+          { type: "narration", content: "你来到祭坛中央。[@ITEM_ADD(秘银药剂)]" },
+          { type: "dialogue", speaker: "黑匠", content: "跟我来。" },
+        ],
+      },
+      protocol: { actionText: "[@PLOT_UPDATE(PP002)]" },
+    }),
+  );
+  const envelopeValidation = validateEnvelopeBoundaries(invalidEnvelope, context);
+  if (envelopeValidation.valid) {
+    throw new Error("❌ Envelope validator 未能识别结构化回复中的越界事实。");
+  }
+  console.log("✅ Envelope validator 测试成功：可识别结构化回复中的越界 speaker / scene drift / action tag。");
+
+  const shouldFlagSpatialDrift = (ai as any).hasPotentialSpatialTransitionWithoutMove(
+    "通道终于到了尽头。你从一处开口滑出，落在一个低矮的地下空间里。你的身后上方是来时的排水管出口。",
+  );
+  if (!shouldFlagSpatialDrift) {
+    throw new Error("❌ 无 MOVE 的空间位移叙事未触发模型校验预判。");
+  }
+  const shouldIgnoreStaticObservation = (ai as any).hasPotentialSpatialTransitionWithoutMove(
+    "你站在排水管前，再次观察石砖缝隙和淤泥，没有更多新发现。",
+  );
+  if (shouldIgnoreStaticObservation) {
+    throw new Error("❌ 静态观察文本被误判为空间位移。");
+  }
+  console.log("✅ 空间位移预警测试成功：无 MOVE 的空间跃迁会触发 validator。");
 
   // 4. 逻辑笼子拦截并处理
   console.log("--- 逻辑裁判介入 ---");

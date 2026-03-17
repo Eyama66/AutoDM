@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ChevronDown, Lightbulb, MessageSquareQuote } from 'lucide-react'
 import clsx from 'clsx'
-import { parseNarrativeContent } from '../narrativeParser'
+import { parseAIResponse } from '@core/ai/AIResponseParser'
 
 const MotionDiv = motion.div
 
@@ -75,7 +75,8 @@ const HintBlock = ({ content }) => {
 }
 
 export const DmMessageRenderer = ({ content }) => {
-  const segments = parseNarrativeContent(content)
+  const { renderEnvelope } = parseAIResponse(content)
+  const segments = renderEnvelope.narrative.segments
   const firstNarrationIndex = segments.findIndex((segment) => segment.type === 'narration')
 
   return (

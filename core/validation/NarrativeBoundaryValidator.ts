@@ -2,6 +2,7 @@ import { ActionProcessor } from "../engine/ActionProcessor.js";
 import { parseListPayload } from "../engine/campaignPayloadUtils.js";
 import { buildPlotFrontier } from "../engine/campaignPlotUtils.js";
 import type { PromptContext } from "../ai/promptBuilder.js";
+import type { ParsedAIResponse } from "../ai/AIResponseEnvelope.js";
 
 export interface NarrativeBoundaryViolation {
   code: string;
@@ -85,6 +86,93 @@ export function buildNarrativeCorrectionPrompt(
     "必须保持世界内表达，不要解释系统、校验器或幕后规则。",
     "保留叙事张力，但不要引入不在当前场景/剧情白名单中的 NPC、地点、出口或事实。",
   ].join("\n");
+}
+
+// ─── Envelope Path (Phase 7A) ─────────────────────────────────────────────────
+
+/**
+ * Validate a ParsedAIResponse envelope against scene boundaries.
+ *
+ * Uses the same rule set as validateNarrativeBoundaries but reads from
+ * structured segments rather than scanning raw text:
+ *   - NPC speakers: from dialogue segment.speaker fields
+ *   - Location drift: from narration segment content
+ *   - Action rules: from ActionProcessor.parse(protocolText)
+ *   - Segment structure: dialogue must have speaker; content must not contain [@ACTION] tags
+ */
+export function validateEnvelopeBoundaries(
+  parsed: ParsedAIResponse,
+  context: PromptContext,
+): NarrativeBoundaryResult {
+  const violations: NarrativeBoundaryViolation[] = [];
+  const segments = parsed.renderEnvelope.narrative.segments;
+  const parsedActions = ActionProcessor.parse(parsed.protocolText);
+
+  const allowedSpeakerNames = new Set(
+    [
+      ...(context.allowedNpcSpeakerNames || []),
+      ...(context.npcs || []).map((npc) => String(npc?.name || "").trim()),
+    ]
+      .map((name) => String(name || "").trim())
+      .filter(Boolean),
+  );
+
+  // Check 1: NPC speakers must be in scene whitelist
+  const invalidSpeakers = extractNpcSpeakersFromSegments(segments).filter(
+    (speaker) => !allowedSpeakerNames.has(speaker),
+  );
+  if (invalidSpeakers.length > 0) {
+    violations.push({
+      code: "npc_speaker_out_of_scene",
+      message: `以下 NPC 不在当前场景白名单中：${invalidSpeakers.join("、")}`,
+    });
+  }
+
+  // Check 2: Location drift in narration content
+  const narrationText = segments
+    .filter((seg) => seg.type === "narration")
+    .map((seg) => seg.content)
+    .join("\n");
+  const invalidArrivalLocations = findInvalidArrivalLocations(narrationText, context);
+  if (invalidArrivalLocations.length > 0) {
+    violations.push({
+      code: "location_scene_drift",
+      message: `叙事把玩家带到了当前不可达地点：${invalidArrivalLocations.join("、")}`,
+    });
+  }
+
+  // Check 3: Action rules on protocolText
+  const illegalActionViolations = validateNarrativeActions(parsedActions, context);
+  violations.push(...illegalActionViolations);
+
+  // Check 4: Segment structure — content must not contain [@ACTION] tags
+  const segmentsWithActionTags = segments.filter((seg) =>
+    /\[@[A-Z_]+\(/.test(seg.content),
+  );
+  if (segmentsWithActionTags.length > 0) {
+    violations.push({
+      code: "action_tag_in_segment_content",
+      message:
+        "narrative.segments[].content 含有 [@ACTION] 标签，动作标签必须只出现在 protocol.actionText 中",
+    });
+  }
+
+  return { valid: violations.length === 0, violations };
+}
+
+// ─── Raw Text Path (legacy, unchanged) ───────────────────────────────────────
+
+function extractNpcSpeakersFromSegments(
+  segments: ParsedAIResponse["renderEnvelope"]["narrative"]["segments"],
+): string[] {
+  const speakers: string[] = [];
+  for (const seg of segments) {
+    if (seg.type === "dialogue") {
+      const speaker = seg.speaker.trim();
+      if (speaker) speakers.push(speaker);
+    }
+  }
+  return speakers;
 }
 
 function extractNpcSpeakers(rawText: string): string[] {

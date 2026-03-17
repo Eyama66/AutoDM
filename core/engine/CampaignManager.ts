@@ -12,6 +12,8 @@ import {
 } from "./campaignAuthority.js";
 import type { ActiveTriggerState } from "../session/EngineState.js";
 import {
+  parseCheckPayload,
+  parseCheckSetPayload,
   isPlayerRollRequest,
   isValidCheckPayload,
   isValidCheckSetPayload,
@@ -24,12 +26,22 @@ import {
   type ModulePlotLike,
 } from "./campaignPlotUtils.js";
 import {
+  buildResolvedCheckScope,
+  clearResolvedCheckScopes,
   clearActiveTrigger,
+  hasResolvedCheckScope,
   hasClaimedSceneItem,
   isRescueWindowOpen,
+  markResolvedCheckScope,
   normalizeInitialState,
 } from "./campaignStateUtils.js";
 import type { EventSource, KnownEngineEvent } from "../session/EngineEvent.js";
+import {
+  summarizeActionsForTrace,
+  summarizeStateForTrace,
+  trace,
+  traceWarn,
+} from "../debug/traceLogger.js";
 
 export type { EngineState } from "../session/EngineState.js";
 export type GameState = EngineState;
@@ -37,7 +49,20 @@ export type GameState = EngineState;
 export interface ProcessAiResponseResult {
   cleanText: string;
   validatedActions: ParsedAction[];
+  rejectedActions: RejectedAiAction[];
   emittedEvents: KnownEngineEvent[];
+}
+
+export type ActionRejectionReason =
+  | "duplicate_resolved_check"
+  | "check_not_allowed_in_scene"
+  | "invalid_check_payload"
+  | "blocked_by_state"
+  | "generic_invalid";
+
+export interface RejectedAiAction {
+  action: ParsedAction;
+  reason: ActionRejectionReason;
 }
 
 /**
@@ -82,6 +107,20 @@ export class CampaignManager {
     }
 
     console.log(`[Campaign] 初始化成功：${this.manifest.name}`);
+    trace("campaign.init", "campaign initialized", {
+      manifest: {
+        id: this.manifest?.moduleId || this.manifest?.id || this.manifest?.name,
+        name: this.manifest?.name,
+      },
+      state: summarizeStateForTrace(this.state),
+      sceneAuthority: this.getCurrentSceneAuthority()
+        ? {
+            exits: this.getCurrentSceneAuthority()?.exits?.map((entry) => entry.ref) || [],
+            encounters: this.getCurrentSceneAuthority()?.encounterIds || [],
+            items: this.getCurrentSceneAuthority()?.itemNames || [],
+          }
+        : null,
+    });
   }
 
   /**
@@ -90,7 +129,14 @@ export class CampaignManager {
   processAiResponse(rawText: string): ProcessAiResponseResult {
     // 1. 提取动作
     const rawActions = ActionProcessor.parse(rawText);
+    trace("campaign.process", "received AI proposal", {
+      rawText,
+      parsedActions: summarizeActionsForTrace(rawActions),
+      stateBefore: summarizeStateForTrace(this.state),
+      guard: this.buildGuardSnapshot(),
+    });
     const validatedActions: ParsedAction[] = [];
+    const rejectedActions: RejectedAiAction[] = [];
     const emittedEvents: KnownEngineEvent[] = [
       this.createEvent("AI_PROPOSAL_RECEIVED", {
         rawText,
@@ -120,11 +166,23 @@ export class CampaignManager {
       if (isValid) {
         emittedEvents.push(...this.applyAction(action));
         validatedActions.push(action);
+        trace("campaign.process", "accepted AI action", {
+          action,
+          stateAfterAction: summarizeStateForTrace(this.state),
+        });
         if (isPlayerRollRequest(action.type)) {
           hasPendingPlayerRollRequest = true;
         }
       } else {
+        const rejection = this.explainRejectedAction(action);
+        rejectedActions.push(rejection);
         console.warn(`[Campaign] 拦截到非法 AI 动作: ${action.originalTag}`);
+        traceWarn("campaign.guard", "rejected AI action", {
+          action,
+          reason: rejection.reason,
+          state: summarizeStateForTrace(this.state),
+          guard: this.buildGuardSnapshot(),
+        });
       }
     }
 
@@ -148,7 +206,22 @@ export class CampaignManager {
       );
     }
 
-    return { cleanText, validatedActions: finalActions, emittedEvents };
+    trace("campaign.process", "completed AI proposal processing", {
+      cleanText,
+      validatedActions: summarizeActionsForTrace(finalActions),
+      rejectedActions: rejectedActions.map((entry) => ({
+        type: entry.action.type,
+        payload: entry.action.payload,
+        reason: entry.reason,
+      })),
+      emittedEvents: emittedEvents.map((event) => ({
+        type: event.type,
+        payload: event.payload,
+        source: event.meta?.source,
+      })),
+      stateAfter: summarizeStateForTrace(this.state),
+    });
+    return { cleanText, validatedActions: finalActions, rejectedActions, emittedEvents };
   }
 
   /**
@@ -164,19 +237,10 @@ export class CampaignManager {
         return /^[A-Z]+:[-+]?\d+$/.test(action.payload.trim());
 
       case "@CHECK":
-        // 校验格式: "Skill:DC"
-        return (
-          (CharacterManager.canTakeNormalAction(this.state.characterSheet) ||
-            this.isRescueWindowOpen()) &&
-          isValidCheckPayload(action.payload)
-        );
+        return this.validateCheckAction(action.payload);
 
       case "@CHECK_SET":
-        return (
-          (CharacterManager.canTakeNormalAction(this.state.characterSheet) ||
-            this.isRescueWindowOpen()) &&
-          isValidCheckSetPayload(action.payload)
-        );
+        return this.validateCheckSetAction(action.payload);
 
       case "@ROLL":
         if (this.state.phase === "completed") {
@@ -265,11 +329,13 @@ export class CampaignManager {
 
     if (action.type === "@COMBAT_START" && this.state.triggerRuntime?.activeTrigger) {
       clearActiveTrigger(this.state);
+      clearResolvedCheckScopes(this.state);
       console.log("[Campaign] 触发器已消费，activeTrigger 清除");
     }
 
-    if (action.type === "@MOVE" && this.state.triggerRuntime?.activeTrigger) {
+    if (action.type === "@MOVE") {
       clearActiveTrigger(this.state);
+      clearResolvedCheckScopes(this.state);
       console.log("[Campaign] 场景切换，activeTrigger 清除");
     }
 
@@ -298,7 +364,21 @@ export class CampaignManager {
   /**
    * 检定结果回调：查找当前 scene 是否有匹配的 trigger，若有则激活并写入 triggerRuntime
    */
-  applyCheckResult(outcome: { skill: string; dc: number; isSuccess: boolean }): void {
+  applyCheckResult(outcome: {
+    skill: string;
+    dc: number;
+    isSuccess: boolean;
+    reason?: string;
+    intent?: string;
+  }): void {
+    const resolvedScope = buildResolvedCheckScope(this.state, {
+      skill: outcome.skill,
+      dc: outcome.dc,
+      reason: outcome.reason,
+      intent: outcome.intent,
+    });
+    markResolvedCheckScope(this.state, resolvedScope);
+
     const sceneAuthority = this.getCurrentSceneAuthority();
     if (!sceneAuthority || sceneAuthority.triggers.length === 0) {
       return;
@@ -311,12 +391,20 @@ export class CampaignManager {
              t.dc === outcome.dc,
     );
     if (!trigger) {
+      trace("campaign.trigger", "check outcome had no matching trigger", {
+        outcome,
+        sceneId: `${this.state.currentAreaId}:${this.state.currentLocationId}`,
+      });
       return;
     }
 
     const branchKey = outcome.isSuccess ? "success" : "failure";
     const branch = trigger.branches[branchKey];
     if (!branch) {
+      traceWarn("campaign.trigger", "trigger matched but branch missing", {
+        triggerId: trigger.id,
+        branchKey,
+      });
       return;
     }
 
@@ -332,6 +420,11 @@ export class CampaignManager {
     }
     this.state.triggerRuntime.activeTrigger = activeTrigger;
     console.log(`[Campaign] 触发器激活: ${trigger.id} (${branchKey})`);
+    trace("campaign.trigger", "active trigger updated", {
+      outcome,
+      activeTrigger,
+      state: summarizeStateForTrace(this.state),
+    });
   }
 
   private loadArea(areaId: string) {
@@ -387,6 +480,225 @@ export class CampaignManager {
     );
   }
 
+  private validateCheckAction(payload: string): boolean {
+    if (
+      !(
+        CharacterManager.canTakeNormalAction(this.state.characterSheet) ||
+        this.isRescueWindowOpen()
+      )
+    ) {
+      return false;
+    }
+
+    const parsedCheck = parseCheckPayload(payload);
+    if (!parsedCheck || !isValidCheckPayload(payload)) {
+      return false;
+    }
+
+    const matchingSceneChecks = this.getAllowedSceneChecks().filter(
+      (allowed) =>
+        allowed.skill.toLowerCase() === parsedCheck.skill.toLowerCase() &&
+        allowed.dc === parsedCheck.dc,
+    );
+
+    const resolvedScope = buildResolvedCheckScope(this.state, parsedCheck);
+    if (
+      hasResolvedCheckScope(this.state, resolvedScope, {
+        allowSkillDcFallback: matchingSceneChecks.length <= 1,
+      })
+    ) {
+      traceWarn("campaign.guard", "rejected duplicate resolved check", {
+        payload,
+        resolvedScope,
+        state: summarizeStateForTrace(this.state),
+      });
+      return false;
+    }
+
+    if (matchingSceneChecks.length > 0 || this.hasExplicitSceneCheckRules()) {
+      return matchingSceneChecks.length > 0;
+    }
+
+    return true;
+  }
+
+  private validateCheckSetAction(payload: string): boolean {
+    if (
+      !(
+        CharacterManager.canTakeNormalAction(this.state.characterSheet) ||
+        this.isRescueWindowOpen()
+      )
+    ) {
+      return false;
+    }
+
+    const parsedCheckSet = parseCheckSetPayload(payload);
+    if (!parsedCheckSet || !isValidCheckSetPayload(payload)) {
+      return false;
+    }
+
+    const allowedSceneChecks = this.getAllowedSceneChecks();
+    const hasSceneRules = this.hasExplicitSceneCheckRules();
+
+    return parsedCheckSet.checks.every((check) => {
+      const matchingSceneChecks = allowedSceneChecks.filter(
+        (allowed) =>
+          allowed.skill.toLowerCase() === check.skill.toLowerCase() &&
+          allowed.dc === check.dc,
+      );
+      const resolvedScope = buildResolvedCheckScope(this.state, check);
+      if (
+        hasResolvedCheckScope(this.state, resolvedScope, {
+          allowSkillDcFallback: matchingSceneChecks.length <= 1,
+        })
+      ) {
+        traceWarn("campaign.guard", "rejected duplicate resolved check from check set", {
+          payload,
+          resolvedScope,
+          state: summarizeStateForTrace(this.state),
+        });
+        return false;
+      }
+
+      if (matchingSceneChecks.length > 0 || hasSceneRules) {
+        return matchingSceneChecks.length > 0;
+      }
+
+      return true;
+    });
+  }
+
+  private explainRejectedAction(action: ParsedAction): RejectedAiAction {
+    if (action.type === "@CHECK") {
+      return {
+        action,
+        reason: this.getCheckRejectionReason(action.payload),
+      };
+    }
+
+    if (action.type === "@CHECK_SET") {
+      return {
+        action,
+        reason: this.getCheckSetRejectionReason(action.payload),
+      };
+    }
+
+    return {
+      action,
+      reason: "generic_invalid",
+    };
+  }
+
+  private getCheckRejectionReason(payload: string): ActionRejectionReason {
+    if (
+      !(
+        CharacterManager.canTakeNormalAction(this.state.characterSheet) ||
+        this.isRescueWindowOpen()
+      )
+    ) {
+      return "blocked_by_state";
+    }
+
+    const parsedCheck = parseCheckPayload(payload);
+    if (!parsedCheck || !isValidCheckPayload(payload)) {
+      return "invalid_check_payload";
+    }
+
+    const matchingSceneChecks = this.getAllowedSceneChecks().filter(
+      (allowed) =>
+        allowed.skill.toLowerCase() === parsedCheck.skill.toLowerCase() &&
+        allowed.dc === parsedCheck.dc,
+    );
+    const resolvedScope = buildResolvedCheckScope(this.state, parsedCheck);
+    if (
+      hasResolvedCheckScope(this.state, resolvedScope, {
+        allowSkillDcFallback: matchingSceneChecks.length <= 1,
+      })
+    ) {
+      return "duplicate_resolved_check";
+    }
+
+    if (matchingSceneChecks.length > 0 || this.hasExplicitSceneCheckRules()) {
+      if (matchingSceneChecks.length === 0) {
+        return "check_not_allowed_in_scene";
+      }
+    }
+
+    return "generic_invalid";
+  }
+
+  private getCheckSetRejectionReason(payload: string): ActionRejectionReason {
+    if (
+      !(
+        CharacterManager.canTakeNormalAction(this.state.characterSheet) ||
+        this.isRescueWindowOpen()
+      )
+    ) {
+      return "blocked_by_state";
+    }
+
+    const parsedCheckSet = parseCheckSetPayload(payload);
+    if (!parsedCheckSet || !isValidCheckSetPayload(payload)) {
+      return "invalid_check_payload";
+    }
+
+    const allowedSceneChecks = this.getAllowedSceneChecks();
+    const hasSceneRules = this.hasExplicitSceneCheckRules();
+
+    for (const check of parsedCheckSet.checks) {
+      const matchingSceneChecks = allowedSceneChecks.filter(
+        (allowed) =>
+          allowed.skill.toLowerCase() === check.skill.toLowerCase() &&
+          allowed.dc === check.dc,
+      );
+      const resolvedScope = buildResolvedCheckScope(this.state, check);
+      if (
+        hasResolvedCheckScope(this.state, resolvedScope, {
+          allowSkillDcFallback: matchingSceneChecks.length <= 1,
+        })
+      ) {
+        return "duplicate_resolved_check";
+      }
+      if ((matchingSceneChecks.length > 0 || hasSceneRules) && matchingSceneChecks.length === 0) {
+        return "check_not_allowed_in_scene";
+      }
+    }
+
+    return "generic_invalid";
+  }
+
+  private hasExplicitSceneCheckRules(): boolean {
+    return this.getAllowedSceneChecks().length > 0;
+  }
+
+  private getAllowedSceneChecks(): Array<{ skill: string; dc: number; reason: string }> {
+    const sceneActionTags =
+      this.getCurrentSceneAuthority()?.actions ||
+      (Array.isArray(this.getCurrentLocationData()?.actions)
+        ? this.getCurrentLocationData().actions
+        : []);
+
+    return sceneActionTags.flatMap((actionTag: string) => {
+      const normalizedTag = String(actionTag || "").trim();
+      const parsedActions = ActionProcessor.parse(
+        normalizedTag.startsWith("[") ? normalizedTag : `[${normalizedTag}]`,
+      );
+      return parsedActions.flatMap((action) => {
+        if (action.type === "@CHECK") {
+          const parsedCheck = parseCheckPayload(action.payload);
+          return parsedCheck ? [parsedCheck] : [];
+        }
+
+        if (action.type === "@CHECK_SET") {
+          const parsedCheckSet = parseCheckSetPayload(action.payload);
+          return parsedCheckSet?.checks || [];
+        }
+
+        return [];
+      });
+    });
+  }
+
   private validateMoveAction(payload: string): boolean {
     const requestedRef = payload.trim();
     if (!requestedRef) {
@@ -438,6 +750,31 @@ export class CampaignManager {
 
   private buildCombatId(): string {
     return `combat_${Date.now()}_${this.eventSequence + 1}`;
+  }
+
+  private buildGuardSnapshot() {
+    const currentScene = this.getCurrentSceneAuthority();
+    const activeTrigger = this.state.triggerRuntime?.activeTrigger;
+
+    return {
+      sceneId: `${this.state.currentAreaId}:${this.state.currentLocationId}`,
+      exits: currentScene?.exits?.map((entry) => entry.ref) || [],
+      encounters: currentScene?.encounterIds || [],
+      items: currentScene?.itemNames || [],
+      resolvedChecks: this.state.resolutionRuntime?.resolvedChecks || [],
+      allowedPlotUpdates: this.modulePlotData
+        ? {
+            completed: [...this.state.plotProgress],
+          }
+        : null,
+      activeTrigger: activeTrigger
+        ? {
+            triggerId: activeTrigger.triggerId,
+            branch: activeTrigger.branch,
+            deployable: activeTrigger.deployable,
+          }
+        : null,
+    };
   }
 
   private createEvent<TType extends KnownEngineEvent["type"]>(

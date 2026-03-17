@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
-import { AnimatePresence } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import { Dices, Shield, X } from 'lucide-react'
 import clsx from 'clsx'
 import { calculateModifier } from '@core/rules/CoreRules'
@@ -9,6 +9,7 @@ import { FormulaRollPanel } from './interaction/FormulaRollPanel'
 import { SingleCheckPanel } from './interaction/SingleCheckPanel'
 
 const PANEL_WIDTH = 272
+const MotionDiv = motion.div
 
 // ─── Character Modal ──────────────────────────────────────────────────────────
 
@@ -35,7 +36,7 @@ function CharacterModal({ character, onClose }) {
   const hpLow = hpPct < 30
 
   return createPortal(
-    <motion.div
+    <MotionDiv
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -43,7 +44,7 @@ function CharacterModal({ character, onClose }) {
       className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/70 backdrop-blur-sm"
       onClick={onClose}
     >
-      <motion.div
+      <MotionDiv
         initial={{ opacity: 0, scale: 0.96, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 10 }}
@@ -83,7 +84,7 @@ function CharacterModal({ character, onClose }) {
               </span>
             </div>
             <div className="h-2 bg-background/60 rounded-full overflow-hidden">
-              <motion.div
+              <MotionDiv
                 animate={{ width: `${Math.max(0, Math.min(100, hpPct))}%` }}
                 transition={{ duration: 0.4 }}
                 className={clsx('h-full rounded-full', hpLow ? 'bg-accent' : 'bg-primary-500')}
@@ -201,8 +202,8 @@ function CharacterModal({ character, onClose }) {
             </div>
           )}
         </div>
-      </motion.div>
-    </motion.div>,
+      </MotionDiv>
+    </MotionDiv>,
     document.body,
   )
 }
@@ -221,7 +222,7 @@ function HpBar({ current, max }) {
         </span>
       </div>
       <div className="h-1.5 bg-background/60 rounded-full overflow-hidden">
-        <motion.div
+        <MotionDiv
           animate={{ width: `${pct}%` }}
           transition={{ duration: 0.4 }}
           className={clsx('h-full rounded-full', low ? 'bg-accent' : 'bg-primary-500')}

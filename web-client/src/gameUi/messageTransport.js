@@ -1,3 +1,5 @@
+import { parseAIResponse } from '@core/ai/AIResponseParser'
+
 export const MESSAGE_SOURCE = {
   PLAYER: 'player',
   SYSTEM_CHECK: 'system_check',
@@ -79,7 +81,8 @@ export function buildAiTransportMessage(message) {
   const aiContent = typeof message?.meta?.aiContent === 'string' ? message.meta.aiContent : ''
 
   if (message?.role === 'dm') {
-    return { role: 'assistant', content }
+    const { historyText } = parseAIResponse(content)
+    return { role: 'assistant', content: historyText || content }
   }
 
   const source = inferMessageSource(message)

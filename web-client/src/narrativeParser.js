@@ -1,4 +1,15 @@
 /**
+ * @deprecated
+ *
+ * This module has been superseded by `@core/ai/AIResponseParser.ts`.
+ * The legacy tag-parsing logic has been ported to TypeScript and is now the
+ * fallback path inside AIResponseParser. This file is retained for reference
+ * only and will be removed in Phase 8.
+ *
+ * See: AutoDM/docs/response_protocol.md
+ */
+
+/**
  * narrativeParser.js
  *
  * 将 DM 返回的扁平文本拆解为结构化段落。
@@ -26,8 +37,10 @@ const SEGMENT_REGEX =
   /<<NPC:\s*(.+?)>>([\s\S]*?)<<\/NPC>>|<<HINT>>([\s\S]*?)<<\/HINT>>/g;
 
 function normalizeDialogueContent(content) {
-  const trimmed = String(content || "").trim();
-  const fullyQuoted = trimmed.match(/^[“"]([\s\S]*?)[”"]$/);
+  // Strip inner action beats <<...>> that AI sometimes inserts within NPC dialogue blocks
+  const withoutActionBeats = String(content || "").replace(/<<[\s\S]*?>>/g, "");
+  const trimmed = withoutActionBeats.trim();
+  const fullyQuoted = trimmed.match(/^[“”]([\s\S]*?)[“”]$/);
   return fullyQuoted ? fullyQuoted[1].trim() : trimmed;
 }
 
@@ -152,12 +165,43 @@ function normalizeHintTags(text) {
   return text.replace(/<<HINT>>([\s\S]*?)<<HINT>>/g, "<<HINT>>$1<</HINT>>");
 }
 
+// AI 有时漏写 <</NPC>> 闭合标签，在此自动补全
+function autoCloseNpcTags(text) {
+  const parts = text.split(/(<<NPC:\s*[^>]+>>)/);
+  if (parts.length === 1) return text;
+
+  const out = [];
+  let pendingNpc = false;
+
+  for (const part of parts) {
+    const isOpenTag = /^<<NPC:\s*[^>]+>>$/.test(part);
+    if (isOpenTag) {
+      if (pendingNpc) {
+        out.push("<</NPC>>");
+      }
+      out.push(part);
+      pendingNpc = true;
+    } else {
+      if (pendingNpc && part.includes("<</NPC>>")) {
+        pendingNpc = false;
+      }
+      out.push(part);
+    }
+  }
+
+  if (pendingNpc) {
+    out.push("<</NPC>>");
+  }
+
+  return out.join("");
+}
+
 export function parseNarrativeContent(rawContent) {
   if (!rawContent || typeof rawContent !== "string") {
     return [{ type: "narration", content: "" }];
   }
 
-  const normalized = normalizeHintTags(rawContent);
+  const normalized = autoCloseNpcTags(normalizeHintTags(rawContent));
   const segments = [];
   let lastIndex = 0;
 

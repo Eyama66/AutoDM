@@ -12,6 +12,13 @@ import {
   resolveCheckOutcome,
 } from './checkResolution'
 import {
+  summarizePromptContextForTrace,
+  summarizeStateForTrace,
+  trace,
+  traceError,
+} from '@core/debug/traceLogger'
+import { parseAIResponse } from '@core/ai/AIResponseParser'
+import {
   aiEngine,
   buildDefaultGameState,
   buildPromptContext,
@@ -32,6 +39,7 @@ import {
   buildSessionUiState,
   buildSystemTurnResolutionPrompt,
   deriveSystemActionFromNarrative,
+  inferTurnIntentFromPlayerInput,
   parseCheckAction,
   parseRollAction,
   resolveTurnIntent,
@@ -40,6 +48,7 @@ import {
   stripResolvedActionTags,
 } from './gameUiUtils'
 import {
+  buildCheckUnavailableFeedback,
   buildEndgameResolutionPrompt,
   buildSystemCheckResultPrompt,
   buildSystemCheckSetResultPrompt,
@@ -56,6 +65,10 @@ function buildLoggedPlayerMessage(content) {
     content,
     meta: { source: MESSAGE_SOURCE.PLAYER },
   }
+}
+
+function uniqueActionTags(...groups) {
+  return [...new Set(groups.flatMap((group) => (Array.isArray(group) ? group.filter(Boolean) : [])))]
 }
 
 function buildLiveSceneContext() {
@@ -116,6 +129,9 @@ const App = () => {
     const nextState = buildDefaultGameState({ ignoreSaved: true })
     campaign.replaceState(nextState)
     campaign.initialize(manifest, getAreaById(nextState.currentAreaId))
+    trace('app.session', 'session reset', {
+      nextState: summarizeStateForTrace(nextState),
+    })
 
     setMessages([INITIAL_DM_MESSAGE])
     setInputValue('')
@@ -151,6 +167,7 @@ const App = () => {
     const resolvedActionTags = Array.isArray(messageMeta?.resolvedActionTags)
       ? messageMeta.resolvedActionTags.filter(Boolean)
       : []
+    const outgoingMeta = messageMeta || { source: MESSAGE_SOURCE.PLAYER }
     const isTerminalLocked =
       liveState.phase === 'endgame' && liveState.variables?.last_chance_available !== true
     const isSessionCompleted = liveState.phase === 'completed'
@@ -158,8 +175,30 @@ const App = () => {
     const textToSend = overrideInput || inputValue
     if (!textToSend.trim() || isThinking || ((isTerminalLocked || isSessionCompleted) && !isSystemMessage)) return
 
+    if (!overrideInput && outgoingMeta?.source === MESSAGE_SOURCE.PLAYER) {
+      const { context, sessionUiState } = buildLiveRuntimeSnapshot(messages, isThinking)
+      const inferredIntent = inferTurnIntentFromPlayerInput(textToSend, context)
+
+      if (
+        inferredIntent &&
+        !isCombatActive &&
+        !sessionUiState.isTerminalLocked &&
+        !sessionUiState.isSessionCompleted &&
+        !sessionUiState.hasPendingDiceAction
+      ) {
+        trace('app.intent', 'resolved implicit free-text intent', {
+          playerInput: textToSend,
+          inferredIntent,
+          state: summarizeStateForTrace(campaign.getState()),
+          context: summarizePromptContextForTrace(context),
+        })
+        setInputValue('')
+        await handleSceneIntent(inferredIntent)
+        return
+      }
+    }
+
     const textToDisplay = displayMsg || textToSend
-    const outgoingMeta = messageMeta || { source: MESSAGE_SOURCE.PLAYER }
     const shouldLogInput = outgoingMeta.hiddenFromLog !== true
     const userMsg = shouldLogInput
       ? {
@@ -200,15 +239,42 @@ const App = () => {
         messageMeta?.source === MESSAGE_SOURCE.SYSTEM_DIRECTIVE
           ? 'system'
           : 'user'
+      trace('app.turn', 'dispatching AI request', {
+        source: outgoingMeta?.source || MESSAGE_SOURCE.PLAYER,
+        inputRole: aiInputRole,
+        displayText: textToDisplay,
+        aiInputPreview: aiInput,
+        resolvedActionTags,
+        historyCount: aiHistory.length,
+        state: summarizeStateForTrace(campaign.getState()),
+        context: summarizePromptContextForTrace(context),
+      })
       const rawAiResponse = await aiEngine.generateStrictResponse(aiInput, context, aiHistory, {
         inputRole: aiInputRole,
       })
       const effectiveAiResponse = stripResolvedActionTags(rawAiResponse, resolvedActionTags)
-      const processedResult = campaign.processAiResponse(effectiveAiResponse)
+      const parsedAiResponse = parseAIResponse(effectiveAiResponse)
+      trace('app.turn', 'received AI response', {
+        rawAiResponse,
+        effectiveAiResponse,
+        responseFormat: parsedAiResponse.format,
+        protocolText: parsedAiResponse.protocolText,
+        historyText: parsedAiResponse.historyText,
+      })
+      const processedResult = campaign.processAiResponse(parsedAiResponse.protocolText)
       const explicitActionTags = processedResult.validatedActions.map((action) => action.originalTag)
       const nextState = campaign.getState()
+      const unavailableCheckFeedback =
+        processedResult.validatedActions.some(
+          (action) => action.type === '@CHECK' || action.type === '@CHECK_SET',
+        )
+          ? ''
+          : buildCheckUnavailableFeedback(processedResult.rejectedActions, context)
+      const narrativeTextForDerivation = unavailableCheckFeedback
+        ? ''
+        : parsedAiResponse.historyText || processedResult.cleanText
       const derivedSystemActionCandidate = deriveSystemActionFromNarrative(
-        processedResult.cleanText,
+        narrativeTextForDerivation,
         explicitActionTags,
       )
       const shouldSuppressDerivedAction =
@@ -218,12 +284,45 @@ const App = () => {
         nextState.phase === 'completed'
       const derivedSystemAction =
         shouldSuppressDerivedAction ? null : derivedSystemActionCandidate
+      const cleanTextForDisplay =
+        unavailableCheckFeedback || processedResult.cleanText
+      const renderContent =
+        unavailableCheckFeedback
+          ? cleanTextForDisplay
+          : parsedAiResponse.format === 'json'
+          ? effectiveAiResponse
+          : processedResult.cleanText
       const dmMsg = {
         id: Date.now() + 1,
         role: 'dm',
-        content: processedResult.cleanText,
-        actions: derivedSystemAction ? [...explicitActionTags, derivedSystemAction] : explicitActionTags,
+        content: renderContent,
+        actions: uniqueActionTags(
+          messageMeta?.forcedActionTags,
+          explicitActionTags,
+          derivedSystemAction ? [derivedSystemAction] : [],
+        ),
       }
+      trace('app.turn', 'applied AI result to runtime', {
+        cleanText: processedResult.cleanText,
+        cleanTextForDisplay,
+        renderContent,
+        responseFormat: parsedAiResponse.format,
+        rejectedActions: processedResult.rejectedActions.map((entry) => ({
+          type: entry.action.type,
+          payload: entry.action.payload,
+          reason: entry.reason,
+        })),
+        unavailableCheckFeedback,
+        explicitActionTags,
+        derivedSystemActionCandidate,
+        derivedSystemAction,
+        emittedEvents: processedResult.emittedEvents.map((event) => ({
+          type: event.type,
+          payload: event.payload,
+          source: event.meta?.source,
+        })),
+        nextState: summarizeStateForTrace(nextState),
+      })
 
       setMessages((prev) => [...prev, dmMsg])
 
@@ -231,6 +330,10 @@ const App = () => {
       setIsCombatActive(nextState.isCombatActive)
     } catch (error) {
       console.error(error)
+      traceError('app.turn', 'handleSend failed', {
+        error,
+        state: summarizeStateForTrace(campaign.getState()),
+      })
       setMessages((prev) => [
         ...prev,
         {
@@ -261,14 +364,27 @@ const App = () => {
 
     const resolution = resolveTurnIntent(intentOption, context)
     const serializedActions = serializeEngineActions(resolution.engineActions)
-    const resolvedActionTags = buildEngineActionTags(resolution.engineActions)
+    let resolvedActionTags = buildEngineActionTags(resolution.engineActions)
+    trace('app.intent', 'resolved structured scene intent', {
+      intentOption,
+      resolution,
+      serializedActions,
+      stateBefore: summarizeStateForTrace(campaign.getState()),
+      context: summarizePromptContextForTrace(context),
+    })
 
     if (serializedActions) {
-      campaign.processAiResponse(serializedActions)
+      const localResult = campaign.processAiResponse(serializedActions)
+      resolvedActionTags = localResult.validatedActions.map((action) => action.originalTag)
     }
 
     const { context: nextContext } = buildLiveSceneContext()
     const hiddenPrompt = buildSystemTurnResolutionPrompt(intentOption, resolution, nextContext)
+    trace('app.intent', 'built system turn resolution prompt', {
+      hiddenPrompt,
+      stateAfterLocalResolution: summarizeStateForTrace(campaign.getState()),
+      nextContext: summarizePromptContextForTrace(nextContext),
+    })
 
     setInputValue('')
     await handleSend(
@@ -279,6 +395,7 @@ const App = () => {
         hiddenFromLog: true,
         aiContent: hiddenPrompt,
         resolvedActionTags,
+        forcedActionTags: resolvedActionTags,
       },
       {
         prependedMessages: [
@@ -312,9 +429,17 @@ const App = () => {
       return
     }
 
-    const outcome = resolveCheckOutcome(character, parsedCheck)
-    campaign.applyCheckResult(outcome)
     const trimmedContext = playerContext.trim()
+    const outcome = resolveCheckOutcome(character, parsedCheck)
+    campaign.applyCheckResult({
+      ...outcome,
+      intent: trimmedContext,
+    })
+    trace('app.check', 'resolved single check', {
+      pendingCheck: parsedCheck,
+      outcome,
+      stateAfterTrigger: summarizeStateForTrace(campaign.getState()),
+    })
     const hiddenPrompt = buildSystemCheckResultPrompt(outcome, trimmedContext)
     const displayLabel = buildCheckDisplayLabel(character, outcome)
     const prependedMessages = trimmedContext ? [buildLoggedPlayerMessage(trimmedContext)] : []
@@ -351,7 +476,18 @@ const App = () => {
     }
 
     const outcomes = checksToResolve.map((check) => resolveCheckOutcome(character, check))
-    outcomes.forEach((outcome) => campaign.applyCheckResult(outcome))
+    outcomes.forEach((outcome) =>
+      campaign.applyCheckResult({
+        ...outcome,
+        intent: trimmedContext,
+      }),
+    )
+    trace('app.check_set', 'resolved check set', {
+      checkSet,
+      selectedCheck,
+      outcomes,
+      stateAfterTrigger: summarizeStateForTrace(campaign.getState()),
+    })
     const hiddenPrompt = buildSystemCheckSetResultPrompt(checkSet, outcomes, trimmedContext)
     const displayLabel =
       checkSet.mode === 'choose_one'
@@ -385,6 +521,11 @@ const App = () => {
       ])
       return
     }
+    trace('app.roll', 'resolved formula roll', {
+      action: parsedAction,
+      rollResult,
+      state: summarizeStateForTrace(campaign.getState()),
+    })
 
     const hiddenPrompt = buildSystemRollResultPrompt(parsedAction, rollResult)
     const displayLabel = `🎲 ${parsedAction.label} 掷出 ${rollResult.total} (${rollResult.breakdown})`
